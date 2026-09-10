@@ -1471,8 +1471,8 @@ export default function RestClient() {
                         openRunner(collection.id)
                       }}
                       className="grid size-6 shrink-0 place-items-center text-muted-foreground hover:bg-background hover:text-foreground"
-                      aria-label={`Run ${collection.name}`}
-                      title="Run collection"
+                      aria-label={`Executer ${collection.name}`}
+                      title="Executer"
                     >
                       <Play className="size-3.5" />
                     </button>
@@ -2699,7 +2699,7 @@ export default function RestClient() {
                 onClick={() => openRunner(contextMenu.collectionId)}
               >
                 <Play className="size-3.5 text-muted-foreground" />
-                Run collection
+                Executer
               </button>
             </>
           )}

@@ -342,8 +342,8 @@ export function CollectionRunner({
           body: "",
           resolvedUrl,
           resolvedRequestBody: "",
-          error: "Body vazio no runner. Cole o JSON no campo Body antes de rodar.",
-          apiMessage: "Body vazio no runner. Cole o JSON no campo Body antes de rodar.",
+          error: "Body vazio no Executer. Cole o JSON no campo Body antes de executar.",
+          apiMessage: "Body vazio no Executer. Cole o JSON no campo Body antes de executar.",
         }
         nextOutputs.push(output)
         setOutputs([...nextOutputs])
@@ -474,7 +474,7 @@ export function CollectionRunner({
         <header className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
           <div className="min-w-0">
             <p className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-              Runner
+              Executer
             </p>
             <h2 className="truncate text-lg font-semibold tracking-tight">{collectionName}</h2>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -665,7 +665,7 @@ export function CollectionRunner({
                       }
                       className="flex h-9 items-center gap-1.5 bg-primary px-3 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <Play className="size-3.5" /> Rodar {inputValues.length || ""}×
+                      <Play className="size-3.5" /> Executar {inputValues.length || ""}×
                     </button>
                   )}
                 </div>
