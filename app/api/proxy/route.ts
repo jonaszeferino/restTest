@@ -7,6 +7,19 @@ type ProxyPayload = {
   body?: string
 }
 
+const HOP_BY_HOP = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailers",
+  "transfer-encoding",
+  "upgrade",
+  "host",
+  "content-length",
+])
+
 export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as ProxyPayload
@@ -30,15 +43,33 @@ export async function POST(request: Request) {
 
     const headers = new Headers()
     for (const [key, value] of Object.entries(payload.headers || {})) {
-      if (!key.trim()) continue
-      headers.set(key, value)
+      const name = key.trim()
+      if (!name) continue
+      if (HOP_BY_HOP.has(name.toLowerCase())) continue
+      headers.set(name, value)
+    }
+
+    const allowsBody = !["GET", "HEAD"].includes(method)
+    let requestBody: string | undefined
+    if (allowsBody) {
+      if (typeof payload.body === "string") {
+        requestBody = payload.body
+      } else if (payload.body != null) {
+        requestBody = JSON.stringify(payload.body)
+      } else {
+        requestBody = ""
+      }
+
+      if (!headers.has("content-type") && requestBody) {
+        headers.set("Content-Type", "application/json")
+      }
     }
 
     const startedAt = Date.now()
     const upstream = await fetch(url, {
       method,
       headers,
-      body: ["GET", "HEAD"].includes(method) ? undefined : payload.body || undefined,
+      body: allowsBody ? requestBody : undefined,
       redirect: "follow",
     })
 
@@ -54,6 +85,7 @@ export async function POST(request: Request) {
       headers: responseHeaders,
       body: responseBody,
       durationMs: Date.now() - startedAt,
+      requestBodyLength: allowsBody ? (requestBody?.length ?? 0) : 0,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Proxy request failed"

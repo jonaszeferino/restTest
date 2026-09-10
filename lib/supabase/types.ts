@@ -1,6 +1,15 @@
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 
+export type ItemType = "request" | "separator"
+
 export type HeaderPair = {
+  id: string
+  key: string
+  value: string
+  enabled: boolean
+}
+
+export type VariablePair = {
   id: string
   key: string
   value: string
@@ -33,6 +42,7 @@ export type Database = {
           workspace_id: string | null
           name: string
           color: string
+          variables: VariablePair[]
           position: number
           created_at: string
           updated_at: string
@@ -42,6 +52,7 @@ export type Database = {
           workspace_id?: string | null
           name: string
           color?: string
+          variables?: VariablePair[]
           position?: number
           created_at?: string
           updated_at?: string
@@ -51,6 +62,7 @@ export type Database = {
           workspace_id?: string | null
           name?: string
           color?: string
+          variables?: VariablePair[]
           position?: number
           created_at?: string
           updated_at?: string
@@ -65,6 +77,7 @@ export type Database = {
           url: string
           headers: HeaderPair[]
           body: string
+          item_type: ItemType
           position: number
           created_at: string
           updated_at: string
@@ -77,6 +90,7 @@ export type Database = {
           url?: string
           headers?: HeaderPair[]
           body?: string
+          item_type?: ItemType
           position?: number
           created_at?: string
           updated_at?: string
@@ -89,6 +103,7 @@ export type Database = {
           url?: string
           headers?: HeaderPair[]
           body?: string
+          item_type?: ItemType
           position?: number
           created_at?: string
           updated_at?: string
@@ -101,16 +116,20 @@ export type Database = {
 export type CollectionRow = Database["public"]["Tables"]["collections"]["Row"]
 export type RequestRow = Database["public"]["Tables"]["requests"]["Row"]
 
+export type RequestDto = {
+  id: string
+  name: string
+  method: HttpMethod
+  url: string
+  headers: HeaderPair[]
+  body: string
+  itemType: ItemType
+}
+
 export type CollectionDto = {
   id: string
   name: string
   color: string
-  items: {
-    id: string
-    name: string
-    method: HttpMethod
-    url: string
-    headers: HeaderPair[]
-    body: string
-  }[]
+  variables: VariablePair[]
+  items: RequestDto[]
 }

@@ -14,6 +14,7 @@ create table if not exists public.collections (
   workspace_id uuid references public.workspaces (id) on delete cascade,
   name text not null,
   color text not null default 'bg-emerald-400',
+  variables jsonb not null default '[]'::jsonb,
   position integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -27,6 +28,7 @@ create table if not exists public.requests (
   url text not null default '',
   headers jsonb not null default '[]'::jsonb,
   body text not null default '',
+  item_type text not null default 'request' check (item_type in ('request', 'separator')),
   position integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react"
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   Code2,
@@ -11,10 +12,12 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  Minus,
   Moon,
   MoreHorizontal,
   PanelRightOpen,
   Pencil,
+  Play,
   Plus,
   Save,
   Search,
@@ -28,7 +31,10 @@ import {
   X,
 } from "lucide-react"
 
+import { BodyEditor } from "@/components/body-editor"
+import { CollectionRunner } from "@/components/collection-runner"
 import { JsonHighlight } from "@/components/json-highlight"
+import { interpolate, interpolateHeaders, type VariablePair } from "@/lib/variables"
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 
@@ -48,12 +54,14 @@ type CollectionItem = {
   url: string
   headers: HeaderPair[]
   body: string
+  itemType: "request" | "separator"
 }
 
 type Collection = {
   id: string
   name: string
   color: string
+  variables: VariablePair[]
   items: CollectionItem[]
 }
 
@@ -84,7 +92,7 @@ function createHeader(key = "", value = "", enabled = true): HeaderPair {
   }
 }
 
-const tabs = ["Params", "Authorization", "Headers", "Body", "Scripts", "Settings"]
+const tabs = ["Params", "Authorization", "Headers", "Body", "Variables", "Scripts", "Settings"]
 
 const methodStyles: Record<HttpMethod, string> = {
   GET: "border-emerald-500/40 bg-emerald-500/10 text-emerald-600",
@@ -216,6 +224,30 @@ function formatResponseBody(body: string) {
   }
 }
 
+function normalizeCollectionItem(item: Partial<CollectionItem> & { id: string; name: string }): CollectionItem {
+  return {
+    id: item.id,
+    name: item.name,
+    method: (item.method as HttpMethod) || "GET",
+    url: item.url || "",
+    headers: Array.isArray(item.headers) ? item.headers : [],
+    body: item.body || "",
+    itemType: item.itemType === "separator" ? "separator" : "request",
+  }
+}
+
+function normalizeCollection(collection: Partial<Collection> & { id: string; name: string }): Collection {
+  return {
+    id: collection.id,
+    name: collection.name,
+    color: collection.color || "bg-emerald-400",
+    variables: Array.isArray(collection.variables) ? collection.variables : [],
+    items: Array.isArray(collection.items)
+      ? collection.items.map((item) => normalizeCollectionItem(item))
+      : [],
+  }
+}
+
 export default function RestClient() {
   const [loggedIn, setLoggedIn] = useState(false)
   const [username, setUsername] = useState("")
@@ -245,6 +277,9 @@ export default function RestClient() {
   const [sent, setSent] = useState(false)
   const [copied, setCopied] = useState(false)
   const [responseCopied, setResponseCopied] = useState(false)
+  const [responseSettingsOpen, setResponseSettingsOpen] = useState(false)
+  const [responseView, setResponseView] = useState<"pretty" | "raw">("pretty")
+  const [showResponseLineNumbers, setShowResponseLineNumbers] = useState(true)
   const [darkMode, setDarkMode] = useState(false)
   const [snippetOpen, setSnippetOpen] = useState(true)
   const [expanded, setExpanded] = useState<string[]>([])
@@ -252,21 +287,67 @@ export default function RestClient() {
   const [renaming, setRenaming] = useState<RenameTarget | null>(null)
   const [renameValue, setRenameValue] = useState("")
   const [showNewRequest, setShowNewRequest] = useState(false)
+  const [newRequestMode, setNewRequestMode] = useState<"blank" | "curl">("blank")
+  const [blankRequestName, setBlankRequestName] = useState("Untitled request")
+  const [blankMethod, setBlankMethod] = useState<HttpMethod>("GET")
+  const [blankUrl, setBlankUrl] = useState("")
+  const [blankBody, setBlankBody] = useState("")
+  const [blankBodyOpen, setBlankBodyOpen] = useState(false)
   const [curlInput, setCurlInput] = useState("")
   const [curlError, setCurlError] = useState("")
   const [targetCollectionId, setTargetCollectionId] = useState("")
   const [newCollectionName, setNewCollectionName] = useState("")
+  const [collectionSearch, setCollectionSearch] = useState("")
+  const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false)
+  const [sidebarSearch, setSidebarSearch] = useState("")
+  const [creatingCollection, setCreatingCollection] = useState(false)
+  const [newSidebarCollectionName, setNewSidebarCollectionName] = useState("")
+  const [creatingCollectionSaving, setCreatingCollectionSaving] = useState(false)
+  const [createCollectionError, setCreateCollectionError] = useState("")
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deletingRequest, setDeletingRequest] = useState(false)
   const [deleteError, setDeleteError] = useState("")
   const [isDirty, setIsDirty] = useState(false)
   const [savingChanges, setSavingChanges] = useState(false)
   const [saveError, setSaveError] = useState("")
+  const [showRunner, setShowRunner] = useState(false)
+  const [runnerCollectionId, setRunnerCollectionId] = useState("")
+  const [savingVariables, setSavingVariables] = useState(false)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const curlInputRef = useRef<HTMLTextAreaElement>(null)
+  const blankNameInputRef = useRef<HTMLInputElement>(null)
+  const sidebarSearchRef = useRef<HTMLInputElement>(null)
+  const newCollectionInputRef = useRef<HTMLInputElement>(null)
 
   const activeCollection = collections.find((collection) => collection.id === activeCollectionId)
   const activeRequest = activeCollection?.items.find((item) => item.id === activeRequestId)
+
+  const filteredModalCollections = useMemo(() => {
+    const query = collectionSearch.trim().toLowerCase()
+    if (!query) return collections
+    return collections.filter((collection) => collection.name.toLowerCase().includes(query))
+  }, [collections, collectionSearch])
+
+  const sidebarCollections = useMemo(() => {
+    const query = sidebarSearch.trim().toLowerCase()
+    if (!query) return collections
+
+    return collections
+      .map((collection) => {
+        const collectionMatches = collection.name.toLowerCase().includes(query)
+        const matchedItems = collection.items.filter(
+          (item) =>
+            item.name.toLowerCase().includes(query) ||
+            item.method.toLowerCase().includes(query) ||
+            item.url.toLowerCase().includes(query),
+        )
+
+        if (collectionMatches) return collection
+        if (matchedItems.length > 0) return { ...collection, items: matchedItems }
+        return null
+      })
+      .filter((collection): collection is Collection => collection !== null)
+  }, [collections, sidebarSearch])
 
   const curl = useMemo(() => {
     const parts = [`curl --request ${method}`, `  --url '${url}'`]
@@ -393,7 +474,7 @@ export default function RestClient() {
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || "Failed to load collections")
 
-      const nextCollections = (payload.collections || []) as Collection[]
+      const nextCollections = ((payload.collections || []) as Collection[]).map(normalizeCollection)
       setCollections(nextCollections)
 
       const firstCollection = nextCollections[0]
@@ -475,18 +556,30 @@ export default function RestClient() {
 
   useEffect(() => {
     if (!showNewRequest) return
-    curlInputRef.current?.focus()
-  }, [showNewRequest])
+    if (newRequestMode === "curl") {
+      curlInputRef.current?.focus()
+      return
+    }
+    blankNameInputRef.current?.focus()
+    blankNameInputRef.current?.select()
+  }, [showNewRequest, newRequestMode])
+
+  useEffect(() => {
+    if (!sidebarSearchOpen) return
+    sidebarSearchRef.current?.focus()
+  }, [sidebarSearchOpen])
+
+  useEffect(() => {
+    if (!creatingCollection) return
+    newCollectionInputRef.current?.focus()
+  }, [creatingCollection])
 
   useEffect(() => {
     if (!showNewRequest) return
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        setShowNewRequest(false)
-        setCurlInput("")
-        setCurlError("")
-        setNewCollectionName("")
+        closeNewRequestModal()
       }
     }
 
@@ -516,6 +609,25 @@ export default function RestClient() {
     }
   }, [contextMenu])
 
+  useEffect(() => {
+    if (!responseSettingsOpen) return
+
+    function closeMenu() {
+      setResponseSettingsOpen(false)
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") closeMenu()
+    }
+
+    window.addEventListener("click", closeMenu)
+    window.addEventListener("keydown", onKeyDown)
+    return () => {
+      window.removeEventListener("click", closeMenu)
+      window.removeEventListener("keydown", onKeyDown)
+    }
+  }, [responseSettingsOpen])
+
   function toggleCollection(id: string) {
     setExpanded((current) =>
       current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
@@ -523,6 +635,7 @@ export default function RestClient() {
   }
 
   function selectRequest(collectionId: string, item: CollectionItem) {
+    if (item.itemType === "separator") return
     setActiveCollectionId(collectionId)
     setActiveRequestId(item.id)
     setRequestName(item.name)
@@ -606,11 +719,18 @@ export default function RestClient() {
     setRenameValue("")
   }
 
-  function openNewRequestModal(collectionId?: string) {
+  function openNewRequestModal(collectionId?: string, mode: "blank" | "curl" = "blank") {
     setContextMenu(null)
+    setNewRequestMode(mode)
+    setBlankRequestName("Untitled request")
+    setBlankMethod("GET")
+    setBlankUrl("")
+    setBlankBody("")
+    setBlankBodyOpen(false)
     setCurlInput("")
     setCurlError("")
     setNewCollectionName("")
+    setCollectionSearch("")
     setTargetCollectionId(collectionId || activeCollectionId || collections[0]?.id || "")
     setShowNewRequest(true)
   }
@@ -620,6 +740,126 @@ export default function RestClient() {
     setCurlInput("")
     setCurlError("")
     setNewCollectionName("")
+    setCollectionSearch("")
+    setBlankRequestName("Untitled request")
+    setBlankMethod("GET")
+    setBlankUrl("")
+    setBlankBody("")
+    setBlankBodyOpen(false)
+    setNewRequestMode("blank")
+  }
+
+  function toggleSidebarSearch() {
+    setSidebarSearchOpen((current) => {
+      const next = !current
+      if (!next) setSidebarSearch("")
+      return next
+    })
+  }
+
+  function startCreateCollection() {
+    setCreatingCollection(true)
+    setNewSidebarCollectionName("")
+    setCreateCollectionError("")
+  }
+
+  function cancelCreateCollection() {
+    if (creatingCollectionSaving) return
+    setCreatingCollection(false)
+    setNewSidebarCollectionName("")
+    setCreateCollectionError("")
+  }
+
+  async function createEmptyCollection() {
+    const folderName = newSidebarCollectionName.trim()
+    if (!folderName) {
+      setCreateCollectionError("Informe o nome da collection.")
+      return
+    }
+
+    setCreatingCollectionSaving(true)
+    setCreateCollectionError("")
+
+    try {
+      const response = await fetch("/api/collections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: folderName }),
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || "Failed to create collection")
+
+      const created = normalizeCollection(payload.collection as Collection)
+      setCollections((current) => [...current, created])
+      setActiveCollectionId(created.id)
+      setTargetCollectionId(created.id)
+      setExpanded((current) => (current.includes(created.id) ? current : [...current, created.id]))
+      setCreatingCollection(false)
+      setNewSidebarCollectionName("")
+    } catch (error) {
+      setCreateCollectionError(error instanceof Error ? error.message : "Failed to create collection")
+    } finally {
+      setCreatingCollectionSaving(false)
+    }
+  }
+
+  function openRunner(collectionId: string) {
+    setContextMenu(null)
+    setRunnerCollectionId(collectionId)
+    setShowRunner(true)
+  }
+
+  async function createSeparator(collectionId: string) {
+    setContextMenu(null)
+    try {
+      const created = await persistNewRequest({
+        collectionId,
+        name: "New section",
+        method: "GET",
+        url: "",
+        headers: [],
+        body: "",
+        itemType: "separator",
+      })
+      attachRequestToCollections(collectionId, created, null)
+      setExpanded((current) => (current.includes(collectionId) ? current : [...current, collectionId]))
+      startRename({ type: "request", collectionId, requestId: created.id }, created.name)
+    } catch (error) {
+      setCollectionsError(error instanceof Error ? error.message : "Failed to create separator")
+    }
+  }
+
+  function updateActiveCollectionVariables(nextVariables: VariablePair[]) {
+    if (!activeCollectionId) return
+    setCollections((current) =>
+      current.map((collection) =>
+        collection.id === activeCollectionId ? { ...collection, variables: nextVariables } : collection,
+      ),
+    )
+  }
+
+  async function saveCollectionVariables(collectionId: string, nextVariables: VariablePair[]) {
+    setSavingVariables(true)
+    try {
+      const response = await fetch(`/api/collections/${collectionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ variables: nextVariables }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        const detail = typeof payload.error === "string" ? payload.error : "Failed to save variables"
+        throw new Error(detail)
+      }
+
+      setCollections((current) =>
+        current.map((collection) =>
+          collection.id === collectionId ? { ...collection, variables: nextVariables } : collection,
+        ),
+      )
+    } finally {
+      setSavingVariables(false)
+    }
   }
 
   function openDeleteConfirm() {
@@ -687,10 +927,118 @@ export default function RestClient() {
     }
   }
 
+  async function resolveTargetCollection(): Promise<{
+    collectionId: string
+    createdCollection: Collection | null
+  }> {
+    const wantsNewCollection =
+      collections.length === 0 || targetCollectionId === NEW_COLLECTION_ID
+    let collectionId = wantsNewCollection
+      ? ""
+      : targetCollectionId || activeCollectionId || collections[0]?.id || ""
+    let createdCollection: Collection | null = null
+
+    if (wantsNewCollection || !collectionId) {
+      const folderName = newCollectionName.trim()
+      if (!folderName) {
+        throw new Error("Informe o nome da collection (pasta) antes de salvar a request.")
+      }
+
+      const collectionResponse = await fetch("/api/collections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: folderName }),
+      })
+      const collectionPayload = await collectionResponse.json()
+      if (!collectionResponse.ok) {
+        throw new Error(collectionPayload.error || "Failed to create collection")
+      }
+
+      createdCollection = normalizeCollection(collectionPayload.collection as Collection)
+      collectionId = createdCollection.id
+      setTargetCollectionId(createdCollection.id)
+      setActiveCollectionId(createdCollection.id)
+    } else {
+      const targetExists = collections.some((collection) => collection.id === collectionId)
+      if (!targetExists) {
+        throw new Error("A collection selecionada não existe mais.")
+      }
+    }
+
+    return { collectionId, createdCollection }
+  }
+
+  function attachRequestToCollections(
+    collectionId: string,
+    newRequest: CollectionItem,
+    createdCollection: Collection | null,
+  ) {
+    const normalizedRequest = normalizeCollectionItem(newRequest)
+    setCollections((current) => {
+      const hasCollection = current.some((collection) => collection.id === collectionId)
+      const base =
+        hasCollection || !createdCollection
+          ? current
+          : [...current, normalizeCollection({ ...createdCollection, items: [] })]
+
+      return base.map((collection) =>
+        collection.id === collectionId
+          ? { ...collection, items: [...collection.items, normalizedRequest] }
+          : collection,
+      )
+    })
+    setExpanded((current) => (current.includes(collectionId) ? current : [...current, collectionId]))
+    if (normalizedRequest.itemType === "request") {
+      selectRequest(collectionId, normalizedRequest)
+    }
+  }
+
+  async function persistNewRequest(input: {
+    collectionId: string
+    name: string
+    method: HttpMethod
+    url: string
+    headers: HeaderPair[]
+    body: string
+    itemType?: "request" | "separator"
+  }) {
+    const response = await fetch("/api/requests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    })
+    const payload = await response.json()
+    if (!response.ok) throw new Error(payload.error || "Failed to save request")
+    return normalizeCollectionItem(payload.request as CollectionItem)
+  }
+
+  async function createBlankRequest() {
+    setSavingRequest(true)
+    setCurlError("")
+
+    try {
+      const { collectionId, createdCollection } = await resolveTargetCollection()
+      const newRequest = await persistNewRequest({
+        collectionId,
+        name: blankRequestName.trim() || "Untitled request",
+        method: blankMethod,
+        url: blankUrl.trim(),
+        headers: [],
+        body: blankMethod === "GET" ? "" : blankBody,
+      })
+      attachRequestToCollections(collectionId, newRequest, createdCollection)
+      closeNewRequestModal()
+    } catch (error) {
+      setCurlError(error instanceof Error ? error.message : "Failed to save request")
+    } finally {
+      setSavingRequest(false)
+    }
+  }
+
   async function createRequestFromCurl() {
     const parsed = parseCurl(curlInput)
     if (!parsed) {
-      setCurlError("Cole um cURL válido. Por enquanto só aceitamos curl.")
+      setCurlError("Cole um cURL válido para importar a request.")
       return
     }
 
@@ -698,73 +1046,16 @@ export default function RestClient() {
     setCurlError("")
 
     try {
-      const wantsNewCollection =
-        collections.length === 0 || targetCollectionId === NEW_COLLECTION_ID
-      let collectionId = wantsNewCollection
-        ? ""
-        : targetCollectionId || activeCollectionId || collections[0]?.id || ""
-      let createdCollection: Collection | null = null
-
-      if (wantsNewCollection || !collectionId) {
-        const folderName = newCollectionName.trim()
-        if (!folderName) {
-          setCurlError("Informe o nome da collection (pasta) antes de salvar a request.")
-          setSavingRequest(false)
-          return
-        }
-
-        const collectionResponse = await fetch("/api/collections", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: folderName }),
-        })
-        const collectionPayload = await collectionResponse.json()
-        if (!collectionResponse.ok) {
-          throw new Error(collectionPayload.error || "Failed to create collection")
-        }
-
-        createdCollection = collectionPayload.collection as Collection
-        collectionId = createdCollection.id
-        setTargetCollectionId(createdCollection.id)
-        setActiveCollectionId(createdCollection.id)
-      } else {
-        const targetExists = collections.some((collection) => collection.id === collectionId)
-        if (!targetExists) {
-          setCurlError("A collection selecionada não existe mais.")
-          setSavingRequest(false)
-          return
-        }
-      }
-
-      const response = await fetch("/api/requests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          collectionId,
-          name: parsed.name,
-          method: parsed.method,
-          url: parsed.url,
-          headers: parsed.headers,
-          body: parsed.body,
-        }),
+      const { collectionId, createdCollection } = await resolveTargetCollection()
+      const newRequest = await persistNewRequest({
+        collectionId,
+        name: parsed.name,
+        method: parsed.method,
+        url: parsed.url,
+        headers: parsed.headers,
+        body: parsed.body,
       })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.error || "Failed to save request")
-
-      const newRequest = payload.request as CollectionItem
-      setCollections((current) => {
-        const hasCollection = current.some((collection) => collection.id === collectionId)
-        const base =
-          hasCollection || !createdCollection ? current : [...current, { ...createdCollection, items: [] }]
-
-        return base.map((collection) =>
-          collection.id === collectionId
-            ? { ...collection, items: [...collection.items, newRequest] }
-            : collection,
-        )
-      })
-      setExpanded((current) => (current.includes(collectionId) ? current : [...current, collectionId]))
-      selectRequest(collectionId, newRequest)
+      attachRequestToCollections(collectionId, newRequest, createdCollection)
       closeNewRequestModal()
     } catch (error) {
       setCurlError(error instanceof Error ? error.message : "Failed to save request")
@@ -782,14 +1073,37 @@ export default function RestClient() {
     setResponseTime(null)
 
     try {
+      const variables = activeCollection?.variables || []
+      const resolvedHeaders = interpolateHeaders(headers, variables)
+      const resolvedUrl = interpolate(url, variables)
+      const sourceBody = (body.trim() || activeRequest?.body || "").trim()
+      const resolvedBody = ["GET", "HEAD"].includes(method)
+        ? ""
+        : interpolate(sourceBody, variables)
+
+      if (!["GET", "HEAD"].includes(method) && !resolvedBody) {
+        setResponseStatus(0)
+        setResponseStatusText("Empty Body")
+        setResponse(
+          JSON.stringify(
+            {
+              error: "Body vazio. Preencha a aba Body antes de enviar um PUT/POST/PATCH.",
+            },
+            null,
+            2,
+          ),
+        )
+        return
+      }
+
       const proxyResponse = await fetch("/api/proxy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           method,
-          url,
-          headers: headersToRecord(headers),
-          body,
+          url: resolvedUrl,
+          headers: headersToRecord(resolvedHeaders),
+          body: resolvedBody,
         }),
       })
 
@@ -835,6 +1149,15 @@ export default function RestClient() {
     window.setTimeout(() => setResponseCopied(false), 1600)
   }
 
+  function clearResponse() {
+    setSent(false)
+    setResponse("{")
+    setResponseStatus(null)
+    setResponseStatusText("")
+    setResponseTime(null)
+    setResponseSettingsOpen(false)
+  }
+
   if (!loggedIn) {
     return (
       <main className={`${darkMode ? "dark" : "light"} flex min-h-screen items-center justify-center bg-background px-6 text-foreground`}>
@@ -856,7 +1179,7 @@ export default function RestClient() {
             </button>
           </div>
           <p className="mb-2 font-mono text-xs uppercase tracking-[0.24em] text-muted-foreground">
-            REST workspace
+            REST
           </p>
           <h1 className="mb-2 text-3xl font-semibold tracking-tight">Welcome back.</h1>
           <p className="mb-8 text-sm leading-6 text-muted-foreground">
@@ -917,7 +1240,7 @@ export default function RestClient() {
             </span>
           </div>
           <div className="hidden h-5 w-px bg-border sm:block" />
-          <span className="font-mono text-[11px] text-muted-foreground">Workspace / Jonas</span>
+          
         </div>
         <div className="flex items-center gap-4">
           <button
@@ -954,15 +1277,99 @@ export default function RestClient() {
               Collections
             </span>
             <div className="flex gap-1">
-              <button className="grid size-6 place-items-center hover:bg-muted" aria-label="Search">
+              <button
+                type="button"
+                onClick={toggleSidebarSearch}
+                className={`grid size-6 place-items-center hover:bg-muted ${
+                  sidebarSearchOpen ? "bg-muted text-foreground" : "text-muted-foreground"
+                }`}
+                aria-label="Search collections"
+                aria-pressed={sidebarSearchOpen}
+              >
                 <Search className="size-3.5" />
               </button>
-              <button className="grid size-6 place-items-center hover:bg-muted" aria-label="New collection">
+              <button
+                type="button"
+                onClick={startCreateCollection}
+                className="grid size-6 place-items-center text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label="New collection"
+                title="New collection"
+              >
                 <Plus className="size-3.5" />
               </button>
             </div>
           </div>
+          {sidebarSearchOpen && (
+            <div className="border-b border-border px-3 py-2">
+              <label className="relative block">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  ref={sidebarSearchRef}
+                  value={sidebarSearch}
+                  onChange={(event) => setSidebarSearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      setSidebarSearchOpen(false)
+                      setSidebarSearch("")
+                    }
+                  }}
+                  className="h-8 w-full border border-input bg-background pl-8 pr-2 font-mono text-[11px] text-foreground outline-none focus:border-primary"
+                  placeholder="Search by name..."
+                  aria-label="Search collections by name"
+                />
+              </label>
+            </div>
+          )}
           <div className="flex-1 overflow-auto p-2">
+            {creatingCollection && (
+              <div className="mb-2 space-y-1.5 border border-dashed border-border bg-muted/20 p-2">
+                <div className="flex items-center gap-2">
+                  <FolderPlus className="size-4 shrink-0 text-muted-foreground" />
+                  <input
+                    ref={newCollectionInputRef}
+                    value={newSidebarCollectionName}
+                    onChange={(event) => {
+                      setNewSidebarCollectionName(event.target.value)
+                      if (createCollectionError) setCreateCollectionError("")
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault()
+                        void createEmptyCollection()
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault()
+                        cancelCreateCollection()
+                      }
+                    }}
+                    disabled={creatingCollectionSaving}
+                    className="min-w-0 flex-1 border border-input bg-background px-2 py-1.5 text-xs outline-none focus:border-primary disabled:opacity-60"
+                    placeholder="Collection name"
+                  />
+                </div>
+                <div className="flex items-center justify-end gap-1.5">
+                  <button
+                    type="button"
+                    onClick={cancelCreateCollection}
+                    disabled={creatingCollectionSaving}
+                    className="h-7 px-2 text-[10px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void createEmptyCollection()}
+                    disabled={creatingCollectionSaving}
+                    className="h-7 bg-primary px-2.5 text-[10px] font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+                  >
+                    {creatingCollectionSaving ? "Saving..." : "Create"}
+                  </button>
+                </div>
+                {createCollectionError && (
+                  <p className="text-[10px] text-rose-600">{createCollectionError}</p>
+                )}
+              </div>
+            )}
             {loadingCollections && (
               <p className="px-2 py-3 text-xs text-muted-foreground">Loading collections...</p>
             )}
@@ -978,12 +1385,22 @@ export default function RestClient() {
                 </button>
               </div>
             )}
-            {!loadingCollections && !collectionsError && collections.length === 0 && (
-              <p className="px-2 py-3 text-xs text-muted-foreground">No collections yet.</p>
+            {!loadingCollections && !collectionsError && collections.length === 0 && !creatingCollection && (
+              <p className="px-2 py-3 text-xs text-muted-foreground">
+                No collections yet. Use + to create a folder.
+              </p>
             )}
-            {collections.map((collection) => {
+            {!loadingCollections &&
+              !collectionsError &&
+              collections.length > 0 &&
+              sidebarCollections.length === 0 && (
+                <p className="px-2 py-3 text-xs text-muted-foreground">No matches found.</p>
+              )}
+            {sidebarCollections.map((collection) => {
               const isCollectionRenaming =
                 renaming?.type === "collection" && renaming.collectionId === collection.id
+              const isExpanded =
+                expanded.includes(collection.id) || Boolean(sidebarSearch.trim())
 
               return (
                 <div key={collection.id} className="mb-1">
@@ -1014,13 +1431,13 @@ export default function RestClient() {
                     className="flex w-full cursor-pointer items-center gap-2 px-2 py-2 text-left text-xs font-medium hover:bg-muted"
                   >
                     <span className="text-muted-foreground">
-                      {expanded.includes(collection.id) ? (
+                      {isExpanded ? (
                         <ChevronDown className="size-3.5" />
                       ) : (
                         <ChevronRight className="size-3.5" />
                       )}
                     </span>
-                    {expanded.includes(collection.id) ? (
+                    {isExpanded ? (
                       <FolderOpen className="size-4 text-muted-foreground" />
                     ) : (
                       <Folder className="size-4 text-muted-foreground" />
@@ -1045,17 +1462,85 @@ export default function RestClient() {
                         className="min-w-0 flex-1 border border-primary bg-background px-1.5 py-0.5 text-xs outline-none"
                       />
                     ) : (
-                      <span className="truncate">{collection.name}</span>
+                      <span className="min-w-0 flex-1 truncate">{collection.name}</span>
                     )}
-                    <span className={`ml-auto size-1.5 rounded-full ${collection.color}`} />
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        openRunner(collection.id)
+                      }}
+                      className="grid size-6 shrink-0 place-items-center text-muted-foreground hover:bg-background hover:text-foreground"
+                      aria-label={`Run ${collection.name}`}
+                      title="Run collection"
+                    >
+                      <Play className="size-3.5" />
+                    </button>
+                    <span className={`size-1.5 shrink-0 rounded-full ${collection.color}`} />
                   </div>
-                  {expanded.includes(collection.id) && (
+                  {isExpanded && (
                     <div className="ml-8 border-l border-border pl-2">
+                      {collection.items.length === 0 && (
+                        <p className="px-2 py-2 text-[10px] text-muted-foreground">Empty folder</p>
+                      )}
                       {collection.items.map((item) => {
                         const isRequestRenaming =
                           renaming?.type === "request" &&
                           renaming.collectionId === collection.id &&
                           renaming.requestId === item.id
+
+                        if (item.itemType === "separator") {
+                          return (
+                            <div
+                              key={item.id}
+                              className="group flex w-full items-center gap-2 px-2 py-2 text-left"
+                              onContextMenu={(event) =>
+                                openContextMenu(event, {
+                                  type: "request",
+                                  collectionId: collection.id,
+                                  requestId: item.id,
+                                  x: event.clientX,
+                                  y: event.clientY,
+                                })
+                              }
+                            >
+                              <Minus className="size-3 shrink-0 text-muted-foreground" />
+                              {isRequestRenaming ? (
+                                <input
+                                  ref={renameInputRef}
+                                  value={renameValue}
+                                  onChange={(event) => setRenameValue(event.target.value)}
+                                  onClick={(event) => event.stopPropagation()}
+                                  onBlur={commitRename}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") {
+                                      event.preventDefault()
+                                      commitRename()
+                                    }
+                                    if (event.key === "Escape") {
+                                      event.preventDefault()
+                                      cancelRename()
+                                    }
+                                  }}
+                                  className="min-w-0 flex-1 border border-primary bg-background px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] outline-none"
+                                />
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    startRename(
+                                      { type: "request", collectionId: collection.id, requestId: item.id },
+                                      item.name,
+                                    )
+                                  }
+                                  className="min-w-0 flex-1 truncate text-left text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
+                                >
+                                  {item.name || "Section"}
+                                </button>
+                              )}
+                            </div>
+                          )
+                        }
 
                         return (
                           <div
@@ -1449,15 +1934,119 @@ export default function RestClient() {
                 </div>
               )}
               {activeTab === "Body" && (
-                <textarea
+                <BodyEditor
                   value={body}
-                  onChange={(event) => {
-                    setBody(event.target.value)
-                    syncRequestFields({ body: event.target.value })
+                  onChange={(next) => {
+                    setBody(next)
+                    syncRequestFields({ body: next })
                   }}
-                  className="min-h-36 w-full resize-y border border-input bg-muted/20 p-3 font-mono text-xs outline-none"
-                  placeholder="{ }"
+                  disabled={!activeRequestId}
                 />
+              )}
+              {activeTab === "Variables" && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold">Collection variables</p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Use {"{{nome}}"} em URL, headers e body. Ex: {"{{baseUrl}}/orders"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={!activeCollectionId}
+                        onClick={() => {
+                          if (!activeCollectionId) return
+                          updateActiveCollectionVariables([
+                            ...(activeCollection?.variables || []),
+                            {
+                              id: `var-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                              key: "",
+                              value: "",
+                              enabled: true,
+                            },
+                          ])
+                        }}
+                        className="flex items-center gap-1 text-xs text-primary disabled:opacity-40"
+                      >
+                        <Plus className="size-3.5" /> Add variable
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!activeCollectionId || savingVariables}
+                        onClick={() => {
+                          if (!activeCollectionId || !activeCollection) return
+                          void saveCollectionVariables(activeCollectionId, activeCollection.variables)
+                        }}
+                        className="h-8 border border-border px-2.5 text-[11px] font-medium hover:bg-muted disabled:opacity-40"
+                      >
+                        {savingVariables ? "Saving..." : "Save vars"}
+                      </button>
+                    </div>
+                  </div>
+                  {!activeCollectionId && (
+                    <p className="text-xs text-muted-foreground">Selecione uma collection para editar variáveis.</p>
+                  )}
+                  {activeCollectionId && (activeCollection?.variables.length || 0) === 0 && (
+                    <p className="text-xs text-muted-foreground">Nenhuma variável ainda.</p>
+                  )}
+                  {(activeCollection?.variables || []).map((variable) => (
+                    <div
+                      key={variable.id}
+                      className="grid grid-cols-[24px_1fr_1.4fr_32px] items-center gap-2"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={variable.enabled}
+                        onChange={(event) =>
+                          updateActiveCollectionVariables(
+                            (activeCollection?.variables || []).map((item) =>
+                              item.id === variable.id ? { ...item, enabled: event.target.checked } : item,
+                            ),
+                          )
+                        }
+                        className="accent-primary"
+                      />
+                      <input
+                        value={variable.key}
+                        onChange={(event) =>
+                          updateActiveCollectionVariables(
+                            (activeCollection?.variables || []).map((item) =>
+                              item.id === variable.id ? { ...item, key: event.target.value } : item,
+                            ),
+                          )
+                        }
+                        className="h-9 border border-input bg-background px-2 font-mono text-xs"
+                        placeholder="baseUrl"
+                      />
+                      <input
+                        value={variable.value}
+                        onChange={(event) =>
+                          updateActiveCollectionVariables(
+                            (activeCollection?.variables || []).map((item) =>
+                              item.id === variable.id ? { ...item, value: event.target.value } : item,
+                            ),
+                          )
+                        }
+                        className="h-9 border border-input bg-background px-2 font-mono text-xs"
+                        placeholder="https://api.example.com"
+                      />
+                      <button
+                        type="button"
+                        className="grid size-8 place-items-center text-muted-foreground hover:text-foreground"
+                        aria-label="Remove variable"
+                        onClick={() =>
+                          updateActiveCollectionVariables(
+                            (activeCollection?.variables || []).filter((item) => item.id !== variable.id),
+                          )
+                        }
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
               {activeTab === "Scripts" && (
                 <div className="flex flex-col gap-3">
@@ -1518,19 +2107,74 @@ export default function RestClient() {
                   >
                     <Copy className="size-3.5" /> {copied ? "Copied" : "Copy cURL"}
                   </button>
-                  <button
-                    className="grid size-7 place-items-center border border-border hover:bg-muted"
-                    aria-label="Response settings"
-                  >
-                    <SlidersHorizontal className="size-3.5" />
-                  </button>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setResponseSettingsOpen((current) => !current)
+                      }}
+                      className={`grid size-7 place-items-center border border-border hover:bg-muted ${
+                        responseSettingsOpen ? "bg-muted text-foreground" : "text-muted-foreground"
+                      }`}
+                      aria-label="Response settings"
+                      aria-expanded={responseSettingsOpen}
+                    >
+                      <SlidersHorizontal className="size-3.5" />
+                    </button>
+                    {responseSettingsOpen && (
+                      <div
+                        className="absolute right-0 top-full z-30 mt-1 min-w-[180px] border border-border bg-card py-1 shadow-md"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <p className="px-3 py-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                          View
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setResponseView("pretty")}
+                          className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-muted"
+                        >
+                          Pretty
+                          {responseView === "pretty" && <Check className="size-3.5 text-primary" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setResponseView("raw")}
+                          className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-muted"
+                        >
+                          Raw
+                          {responseView === "raw" && <Check className="size-3.5 text-primary" />}
+                        </button>
+                        <div className="my-1 border-t border-border" />
+                        <button
+                          type="button"
+                          onClick={() => setShowResponseLineNumbers((current) => !current)}
+                          className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-muted"
+                        >
+                          Line numbers
+                          {showResponseLineNumbers && <Check className="size-3.5 text-primary" />}
+                        </button>
+                        <div className="my-1 border-t border-border" />
+                        <button
+                          type="button"
+                          onClick={clearResponse}
+                          disabled={!sent}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-rose-600 hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
+                        >
+                          <Trash2 className="size-3.5" />
+                          Clear response
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden border border-border bg-card/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                 <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3 backdrop-blur-sm">
                   <div className="flex items-center gap-2">
                     <span className="border-b-2 border-sky-500 py-3 font-mono text-[10px] text-foreground">
-                      Pretty
+                      {responseView === "pretty" ? "Pretty" : "Raw"}
                     </span>
                     <button
                       type="button"
@@ -1569,10 +2213,20 @@ export default function RestClient() {
                     </span>
                   </div>
                 </div>
-                {sent ? (
-                  <JsonHighlight value={response} />
+                {responseView === "pretty" ? (
+                  sent ? (
+                    <JsonHighlight value={response} showLineNumbers={showResponseLineNumbers} />
+                  ) : (
+                    <JsonHighlight
+                      value={null}
+                      emptyLabel="// Response body will appear here"
+                      showLineNumbers={showResponseLineNumbers}
+                    />
+                  )
                 ) : (
-                  <JsonHighlight value={null} emptyLabel="// Response body will appear here" />
+                  <pre className="json-viewer min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-all p-4 font-mono text-[12px] leading-6 text-foreground">
+                    {sent ? response || "" : "// Response body will appear here"}
+                  </pre>
                 )}
               </div>
             </div>
@@ -1621,14 +2275,7 @@ export default function RestClient() {
               >
                 <Copy className="size-4" />
               </button>
-              <button
-                onClick={() => setSnippetOpen(false)}
-                className="grid size-7 place-items-center text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label="Close code snippet"
-                title="Recolher"
-              >
-                <ChevronRight className="size-4" />
-              </button>
+              
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2 border-b border-border px-5 py-3">
@@ -1729,9 +2376,13 @@ export default function RestClient() {
                 <p className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
                   New request
                 </p>
-                <h2 className="text-lg font-semibold tracking-tight">Import from cURL</h2>
+                <h2 className="text-lg font-semibold tracking-tight">
+                  {newRequestMode === "blank" ? "Create request" : "Import from cURL"}
+                </h2>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  Por enquanto só aceitamos um comando curl. Cole abaixo para criar a request.
+                  {newRequestMode === "blank"
+                    ? "Crie uma request em branco e preencha method, URL e headers no editor."
+                    : "Cole um comando curl para importar method, URL, headers e body."}
                 </p>
               </div>
               <button
@@ -1740,6 +2391,37 @@ export default function RestClient() {
                 aria-label="Close"
               >
                 <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="mb-5 grid grid-cols-2 border border-border p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setNewRequestMode("blank")
+                  if (curlError) setCurlError("")
+                }}
+                className={`h-8 text-xs font-medium transition-colors ${
+                  newRequestMode === "blank"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                Blank
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewRequestMode("curl")
+                  if (curlError) setCurlError("")
+                }}
+                className={`h-8 text-xs font-medium transition-colors ${
+                  newRequestMode === "curl"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                Import cURL
               </button>
             </div>
 
@@ -1771,40 +2453,58 @@ export default function RestClient() {
                   </label>
                 </div>
               ) : (
-                <div className="grid gap-2">
-                  {collections.map((collection) => {
-                    const selected = targetCollectionId === collection.id
-                    return (
-                      <button
-                        key={collection.id}
-                        type="button"
-                        onClick={() => {
-                          setTargetCollectionId(collection.id)
-                          setNewCollectionName("")
-                          if (curlError) setCurlError("")
-                        }}
-                        className={`flex items-center gap-3 border px-3 py-2.5 text-left text-xs transition-colors ${
-                          selected
-                            ? "border-primary bg-primary/10 text-foreground"
-                            : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-                        }`}
-                      >
-                        <Folder className="size-4 shrink-0" />
-                        <span className="min-w-0 flex-1 truncate font-medium">{collection.name}</span>
-                        <span className="font-mono text-[10px] text-muted-foreground">
-                          {collection.items.length} req
-                        </span>
-                        <span className={`size-1.5 rounded-full ${collection.color}`} />
-                      </button>
-                    )
-                  })}
+                <div className="space-y-2">
+                  <label className="relative block">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      value={collectionSearch}
+                      onChange={(event) => setCollectionSearch(event.target.value)}
+                      className="h-9 w-full border border-input bg-background pl-9 pr-3 font-mono text-xs text-foreground outline-none focus:border-primary"
+                      placeholder="Search collections..."
+                      aria-label="Search collections"
+                    />
+                  </label>
+                  <div className="max-h-48 space-y-2 overflow-y-auto overscroll-contain pr-0.5">
+                    {filteredModalCollections.length === 0 ? (
+                      <p className="border border-dashed border-border px-3 py-4 text-center text-[11px] text-muted-foreground">
+                        Nenhuma collection encontrada.
+                      </p>
+                    ) : (
+                      filteredModalCollections.map((collection) => {
+                        const selected = targetCollectionId === collection.id
+                        return (
+                          <button
+                            key={collection.id}
+                            type="button"
+                            onClick={() => {
+                              setTargetCollectionId(collection.id)
+                              setNewCollectionName("")
+                              if (curlError) setCurlError("")
+                            }}
+                            className={`flex w-full items-center gap-3 border px-3 py-2.5 text-left text-xs transition-colors ${
+                              selected
+                                ? "border-primary bg-primary/10 text-foreground"
+                                : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                            }`}
+                          >
+                            <Folder className="size-4 shrink-0" />
+                            <span className="min-w-0 flex-1 truncate font-medium">{collection.name}</span>
+                            <span className="font-mono text-[10px] text-muted-foreground">
+                              {collection.items.length} req
+                            </span>
+                            <span className={`size-1.5 rounded-full ${collection.color}`} />
+                          </button>
+                        )
+                      })
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={() => {
                       setTargetCollectionId(NEW_COLLECTION_ID)
                       if (curlError) setCurlError("")
                     }}
-                    className={`flex items-center gap-3 border border-dashed px-3 py-2.5 text-left text-xs transition-colors ${
+                    className={`flex w-full items-center gap-3 border border-dashed px-3 py-2.5 text-left text-xs transition-colors ${
                       targetCollectionId === NEW_COLLECTION_ID
                         ? "border-primary bg-primary/10 text-foreground"
                         : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -1833,20 +2533,111 @@ export default function RestClient() {
               )}
             </div>
 
-            <label className="flex flex-col gap-2 text-xs font-medium">
-              cURL
-              <textarea
-                ref={curlInputRef}
-                value={curlInput}
-                onChange={(event) => {
-                  setCurlInput(event.target.value)
-                  if (curlError) setCurlError("")
-                }}
-                className="min-h-40 w-full resize-y border border-input bg-background p-3 font-mono text-xs leading-6 outline-none focus:border-primary"
-                placeholder={`curl --request GET \\\n  --url https://api.example.com/v1/items`}
-                spellCheck={false}
-              />
-            </label>
+            {newRequestMode === "blank" ? (
+              <div className="space-y-4">
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  Name
+                  <input
+                    ref={blankNameInputRef}
+                    value={blankRequestName}
+                    onChange={(event) => {
+                      setBlankRequestName(event.target.value)
+                      if (curlError) setCurlError("")
+                    }}
+                    className="h-10 w-full border border-input bg-background px-3 text-xs outline-none focus:border-primary"
+                    placeholder="Untitled request"
+                  />
+                </label>
+                <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] gap-2">
+                  <label className="flex flex-col gap-2 text-xs font-medium">
+                    Method
+                    <select
+                      value={blankMethod}
+                      onChange={(event) => {
+                        const nextMethod = event.target.value as HttpMethod
+                        setBlankMethod(nextMethod)
+                        if (nextMethod === "GET") {
+                          setBlankBody("")
+                          setBlankBodyOpen(false)
+                        }
+                      }}
+                      className="h-10 border border-input bg-background px-2 font-mono text-xs outline-none focus:border-primary"
+                    >
+                      {httpMethods.map((httpMethod) => (
+                        <option key={httpMethod} value={httpMethod}>
+                          {httpMethod}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex min-w-0 flex-col gap-2 text-xs font-medium">
+                    URL
+                    <input
+                      value={blankUrl}
+                      onChange={(event) => {
+                        setBlankUrl(event.target.value)
+                        if (curlError) setCurlError("")
+                      }}
+                      className="h-10 w-full border border-input bg-background px-3 font-mono text-xs outline-none focus:border-primary"
+                      placeholder="https://api.example.com/v1/items"
+                      spellCheck={false}
+                    />
+                  </label>
+                </div>
+                {blankMethod !== "GET" && (
+                  <div className="space-y-2">
+                    {!blankBodyOpen ? (
+                      <button
+                        type="button"
+                        onClick={() => setBlankBodyOpen(true)}
+                        className="flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        <Plus className="size-3.5" /> Add body
+                      </button>
+                    ) : (
+                      <label className="flex flex-col gap-2 text-xs font-medium">
+                        <div className="flex items-center justify-between">
+                          <span>Body</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBlankBody("")
+                              setBlankBodyOpen(false)
+                            }}
+                            className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                          >
+                            <X className="size-3" /> Remove
+                          </button>
+                        </div>
+                        <textarea
+                          value={blankBody}
+                          onChange={(event) => setBlankBody(event.target.value)}
+                          className="min-h-28 w-full resize-y border border-input bg-background p-3 font-mono text-xs leading-5 outline-none focus:border-primary"
+                          placeholder={`{\n  "key": "value"\n}`}
+                          spellCheck={false}
+                          autoFocus
+                        />
+                      </label>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                cURL
+                <textarea
+                  ref={curlInputRef}
+                  value={curlInput}
+                  onChange={(event) => {
+                    setCurlInput(event.target.value)
+                    if (curlError) setCurlError("")
+                  }}
+                  className="min-h-40 w-full resize-y border border-input bg-background p-3 font-mono text-xs leading-6 outline-none focus:border-primary"
+                  placeholder={`curl --request GET \\\n  --url https://api.example.com/v1/items`}
+                  spellCheck={false}
+                />
+              </label>
+            )}
 
             {curlError && (
               <p className="mt-3 text-xs text-rose-600">{curlError}</p>
@@ -1860,7 +2651,9 @@ export default function RestClient() {
                 Cancel
               </button>
               <button
-                onClick={() => void createRequestFromCurl()}
+                onClick={() =>
+                  void (newRequestMode === "blank" ? createBlankRequest() : createRequestFromCurl())
+                }
                 disabled={savingRequest}
                 className="flex h-10 items-center gap-2 bg-primary px-4 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -1880,19 +2673,35 @@ export default function RestClient() {
 
       {contextMenu && (
         <div
-          className="fixed z-50 min-w-[160px] border border-border bg-card py-1 shadow-md"
+          className="fixed z-50 min-w-[180px] border border-border bg-card py-1 shadow-md"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(event) => event.stopPropagation()}
           onContextMenu={(event) => event.preventDefault()}
         >
           {contextMenu.type === "collection" && (
-            <button
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-muted"
-              onClick={() => openNewRequestModal(contextMenu.collectionId)}
-            >
-              <Plus className="size-3.5 text-muted-foreground" />
-              New request
-            </button>
+            <>
+              <button
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-muted"
+                onClick={() => openNewRequestModal(contextMenu.collectionId)}
+              >
+                <Plus className="size-3.5 text-muted-foreground" />
+                New request
+              </button>
+              <button
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-muted"
+                onClick={() => void createSeparator(contextMenu.collectionId)}
+              >
+                <Minus className="size-3.5 text-muted-foreground" />
+                New separator
+              </button>
+              <button
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-muted"
+                onClick={() => openRunner(contextMenu.collectionId)}
+              >
+                <Play className="size-3.5 text-muted-foreground" />
+                Run collection
+              </button>
+            </>
           )}
           <button
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-muted"
@@ -1920,7 +2729,68 @@ export default function RestClient() {
             <Pencil className="size-3.5 text-muted-foreground" />
             Rename
           </button>
+          {contextMenu.type === "request" && (
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-rose-600 hover:bg-muted"
+              onClick={() => {
+                const collectionId = contextMenu.collectionId
+                const requestId = contextMenu.requestId
+                setContextMenu(null)
+                void (async () => {
+                  try {
+                    const response = await fetch(`/api/requests/${requestId}`, { method: "DELETE" })
+                    const payload = await response.json().catch(() => ({}))
+                    if (!response.ok) throw new Error(payload.error || "Failed to delete")
+                    setCollections((current) =>
+                      current.map((collection) =>
+                        collection.id === collectionId
+                          ? {
+                              ...collection,
+                              items: collection.items.filter((item) => item.id !== requestId),
+                            }
+                          : collection,
+                      ),
+                    )
+                    if (activeRequestId === requestId) {
+                      setActiveRequestId("")
+                      setRequestName("")
+                      setMethod("GET")
+                      setUrl("")
+                      setHeaders([])
+                      setBody("")
+                      applyAuthFromHeaders([])
+                      setIsDirty(false)
+                    }
+                  } catch (error) {
+                    setCollectionsError(
+                      error instanceof Error ? error.message : "Failed to delete item",
+                    )
+                  }
+                })()
+              }}
+            >
+              <Trash2 className="size-3.5" />
+              Delete
+            </button>
+          )}
         </div>
+      )}
+
+      {showRunner && runnerCollectionId && (
+        <CollectionRunner
+          open={showRunner}
+          collectionName={
+            collections.find((collection) => collection.id === runnerCollectionId)?.name || "Collection"
+          }
+          items={collections.find((collection) => collection.id === runnerCollectionId)?.items || []}
+          variables={
+            collections.find((collection) => collection.id === runnerCollectionId)?.variables || []
+          }
+          onClose={() => {
+            setShowRunner(false)
+            setRunnerCollectionId("")
+          }}
+        />
       )}
     </main>
   )

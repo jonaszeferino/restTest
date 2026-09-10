@@ -4,10 +4,24 @@ import type {
   CollectionRow,
   HeaderPair,
   HttpMethod,
+  ItemType,
+  RequestDto,
   RequestRow,
+  VariablePair,
 } from "@/lib/supabase/types"
 
-function mapRequest(row: RequestRow) {
+function mapVariables(value: unknown): VariablePair[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(
+    (item): item is VariablePair =>
+      Boolean(item) &&
+      typeof item === "object" &&
+      typeof (item as VariablePair).id === "string" &&
+      typeof (item as VariablePair).key === "string",
+  )
+}
+
+function mapRequest(row: RequestRow): RequestDto {
   return {
     id: row.id,
     name: row.name,
@@ -15,7 +29,32 @@ function mapRequest(row: RequestRow) {
     url: row.url,
     headers: Array.isArray(row.headers) ? row.headers : [],
     body: row.body || "",
+    itemType: row.item_type === "separator" ? "separator" : "request",
   }
+}
+
+function mapCollection(row: CollectionRow, items: RequestDto[] = []): CollectionDto {
+  return {
+    id: row.id,
+    name: row.name,
+    color: row.color,
+    variables: mapVariables((row as CollectionRow & { variables?: unknown }).variables),
+    items,
+  }
+}
+
+export function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message
+    if (typeof message === "string" && message.trim()) return message
+  }
+  return fallback
+}
+
+function isMissingColumnError(error: unknown, column: string) {
+  const message = getErrorMessage(error, "")
+  return message.toLowerCase().includes(column.toLowerCase())
 }
 
 export async function listCollections(): Promise<CollectionDto[]> {
@@ -42,12 +81,12 @@ export async function listCollections(): Promise<CollectionDto[]> {
 
   const requestRows = (requests || []) as RequestRow[]
 
-  return collectionRows.map((collection) => ({
-    id: collection.id,
-    name: collection.name,
-    color: collection.color,
-    items: requestRows.filter((request) => request.collection_id === collection.id).map(mapRequest),
-  }))
+  return collectionRows.map((collection) =>
+    mapCollection(
+      collection,
+      requestRows.filter((request) => request.collection_id === collection.id).map(mapRequest),
+    ),
+  )
 }
 
 const collectionColors = ["bg-emerald-400", "bg-sky-400", "bg-amber-400", "bg-violet-400", "bg-rose-400"]
@@ -80,26 +119,25 @@ export async function createCollection(input: { name: string; color?: string }) 
     workspaceId = (createdWorkspace as { id: string }).id
   }
 
-  const { data, error } = await supabase
+  const baseRow = {
+    workspace_id: workspaceId,
+    name,
+    color,
+    position,
+  }
+
+  let result = await supabase
     .from("collections")
-    .insert({
-      workspace_id: workspaceId,
-      name,
-      color,
-      position,
-    })
+    .insert({ ...baseRow, variables: [] })
     .select("*")
     .single()
 
-  if (error) throw error
+  if (result.error && isMissingColumnError(result.error, "variables")) {
+    result = await supabase.from("collections").insert(baseRow).select("*").single()
+  }
 
-  const collection = data as CollectionRow
-  return {
-    id: collection.id,
-    name: collection.name,
-    color: collection.color,
-    items: [],
-  } satisfies CollectionDto
+  if (result.error) throw result.error
+  return mapCollection(result.data as CollectionRow, [])
 }
 
 export async function createRequest(input: {
@@ -109,6 +147,7 @@ export async function createRequest(input: {
   url: string
   headers: HeaderPair[]
   body: string
+  itemType?: ItemType
 }) {
   const supabase = getSupabaseAdmin()
 
@@ -123,23 +162,35 @@ export async function createRequest(input: {
 
   const existingRows = (existing || []) as Array<{ position: number }>
   const nextPosition = (existingRows[0]?.position ?? -1) + 1
+  const itemType = input.itemType || "request"
 
-  const { data, error } = await supabase
+  const baseRow = {
+    collection_id: input.collectionId,
+    name: input.name,
+    method: itemType === "separator" ? ("GET" as HttpMethod) : input.method,
+    url: itemType === "separator" ? "" : input.url,
+    headers: itemType === "separator" ? [] : input.headers,
+    body: itemType === "separator" ? "" : input.body,
+    position: nextPosition,
+  }
+
+  let result = await supabase
     .from("requests")
-    .insert({
-      collection_id: input.collectionId,
-      name: input.name,
-      method: input.method,
-      url: input.url,
-      headers: input.headers,
-      body: input.body,
-      position: nextPosition,
-    })
+    .insert({ ...baseRow, item_type: itemType })
     .select("*")
     .single()
 
-  if (error) throw error
-  return mapRequest(data as RequestRow)
+  if (result.error && isMissingColumnError(result.error, "item_type")) {
+    if (itemType === "separator") {
+      throw new Error(
+        "Para usar separators, rode o SQL em supabase/migrations/002_variables_and_separators.sql no Supabase.",
+      )
+    }
+    result = await supabase.from("requests").insert(baseRow).select("*").single()
+  }
+
+  if (result.error) throw result.error
+  return mapRequest(result.data as RequestRow)
 }
 
 export async function updateRequest(
@@ -151,6 +202,7 @@ export async function updateRequest(
     headers: HeaderPair[]
     body: string
     collection_id: string
+    item_type: ItemType
   }>,
 ) {
   const supabase = getSupabaseAdmin()
@@ -159,11 +211,21 @@ export async function updateRequest(
   return mapRequest(data as RequestRow)
 }
 
-export async function updateCollection(id: string, patch: Partial<{ name: string; color: string }>) {
+export async function updateCollection(
+  id: string,
+  patch: Partial<{ name: string; color: string; variables: VariablePair[] }>,
+) {
   const supabase = getSupabaseAdmin()
   const { data, error } = await supabase.from("collections").update(patch).eq("id", id).select("*").single()
-  if (error) throw error
-  return data as CollectionRow
+  if (error) {
+    if (patch.variables && isMissingColumnError(error, "variables")) {
+      throw new Error(
+        "Para salvar variáveis, rode o SQL em supabase/migrations/002_variables_and_separators.sql no Supabase.",
+      )
+    }
+    throw error
+  }
+  return mapCollection(data as CollectionRow)
 }
 
 export async function deleteRequest(id: string) {

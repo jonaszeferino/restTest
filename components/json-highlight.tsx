@@ -161,9 +161,11 @@ function prepareJsonSource(value: string) {
 export function JsonHighlight({
   value,
   emptyLabel = "// Response body will appear here",
+  showLineNumbers = true,
 }: {
   value?: string | null
   emptyLabel?: string
+  showLineNumbers?: boolean
 }) {
   const highlightedLines = useMemo(() => {
     if (!value) {
@@ -184,12 +186,20 @@ export function JsonHighlight({
         {highlightedLines.map((tokens, lineIndex) => (
           <div
             key={`line-${lineIndex}`}
-            className="grid grid-cols-[3rem_minmax(0,1fr)] border-l-2 border-transparent hover:border-sky-500/40 hover:bg-sky-500/[0.04]"
+            className={`border-l-2 border-transparent hover:border-sky-500/40 hover:bg-sky-500/[0.04] ${
+              showLineNumbers ? "grid grid-cols-[3rem_minmax(0,1fr)]" : "grid grid-cols-[minmax(0,1fr)]"
+            }`}
           >
-            <span className="select-none pr-3 text-right font-mono text-[10px] leading-6 text-zinc-400 dark:text-zinc-600">
-              {lineIndex + 1}
-            </span>
-            <pre className="overflow-x-auto whitespace-pre-wrap break-all pr-4 font-mono text-[12px] leading-6">
+            {showLineNumbers && (
+              <span className="select-none pr-3 text-right font-mono text-[10px] leading-6 text-zinc-400 dark:text-zinc-600">
+                {lineIndex + 1}
+              </span>
+            )}
+            <pre
+              className={`overflow-x-auto whitespace-pre-wrap break-all font-mono text-[12px] leading-6 ${
+                showLineNumbers ? "pr-4" : "px-4"
+              }`}
+            >
               {tokens.map((token, tokenIndex) => (
                 <span key={`token-${lineIndex}-${tokenIndex}`} className={tokenClassName[token.type]}>
                   {token.value}
