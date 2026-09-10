@@ -183,7 +183,7 @@ export async function createRequest(input: {
   if (result.error && isMissingColumnError(result.error, "item_type")) {
     if (itemType === "separator") {
       throw new Error(
-        "Para usar separators, rode o SQL em supabase/migrations/002_variables_and_separators.sql no Supabase.",
+        "To use separators, run the SQL in supabase/migrations/002_variables_and_separators.sql in Supabase.",
       )
     }
     result = await supabase.from("requests").insert(baseRow).select("*").single()
@@ -220,7 +220,7 @@ export async function updateCollection(
   if (error) {
     if (patch.variables && isMissingColumnError(error, "variables")) {
       throw new Error(
-        "Para salvar variáveis, rode o SQL em supabase/migrations/002_variables_and_separators.sql no Supabase.",
+        "To save variables, run the SQL in supabase/migrations/002_variables_and_separators.sql in Supabase.",
       )
     }
     throw error

@@ -819,7 +819,7 @@ export default function RestClient() {
   async function createEmptyCollection() {
     const folderName = newSidebarCollectionName.trim()
     if (!folderName) {
-      setCreateCollectionError("Informe o nome da collection.")
+      setCreateCollectionError("Enter a collection name.")
       return
     }
 
@@ -884,7 +884,7 @@ export default function RestClient() {
     try {
       const created = await persistNewRequest({
         collectionId,
-        name: `${source.name} copia`,
+        name: `${source.name} copy`,
         method: source.method,
         url: source.url,
         headers: source.headers.map((header) =>
@@ -1011,7 +1011,7 @@ export default function RestClient() {
     if (wantsNewCollection || !collectionId) {
       const folderName = newCollectionName.trim()
       if (!folderName) {
-        throw new Error("Informe o nome da collection (pasta) antes de salvar a request.")
+        throw new Error("Enter a collection (folder) name before saving the request.")
       }
 
       const collectionResponse = await fetch("/api/collections", {
@@ -1031,7 +1031,7 @@ export default function RestClient() {
     } else {
       const targetExists = collections.some((collection) => collection.id === collectionId)
       if (!targetExists) {
-        throw new Error("A collection selecionada não existe mais.")
+        throw new Error("The selected collection no longer exists.")
       }
     }
 
@@ -1108,7 +1108,7 @@ export default function RestClient() {
   async function createRequestFromCurl() {
     const parsed = parseCurl(curlInput)
     if (!parsed) {
-      setCurlError("Cole um cURL válido para importar a request.")
+      setCurlError("Paste a valid cURL command to import the request.")
       return
     }
 
@@ -1157,7 +1157,7 @@ export default function RestClient() {
         setResponse(
           JSON.stringify(
             {
-              error: "Body vazio. Preencha a aba Body antes de enviar um PUT/POST/PATCH.",
+              error: "Empty body. Fill in the Body tab before sending a PUT/POST/PATCH.",
             },
             null,
             2,
@@ -1263,7 +1263,7 @@ export default function RestClient() {
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
 
-      // Arrastou até a barra de Params / Authorization: esconde o bloco inteiro.
+      // Dragged up to the Params / Authorization tabs: collapse the whole block.
       if (latestHeight <= 28) {
         setRequestPaneCollapsed(true)
         setRequestPaneHeight(requestPaneLastHeightRef.current || 220)
@@ -1876,16 +1876,16 @@ export default function RestClient() {
                 type="button"
                 onClick={toggleRequestPaneCollapsed}
                 className="ml-auto mb-3 flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
-                title={requestPaneCollapsed ? "Expandir Params / Body" : "Minimizar até as abas"}
-                aria-label={requestPaneCollapsed ? "Expandir painel da request" : "Minimizar painel da request"}
+                title={requestPaneCollapsed ? "Expand Params / Body" : "Minimize request panel"}
+                aria-label={requestPaneCollapsed ? "Expand request panel" : "Minimize request panel"}
               >
                 {requestPaneCollapsed ? (
                   <>
-                    <ChevronDown className="size-3.5" /> Expandir
+                    <ChevronDown className="size-3.5" /> Expand
                   </>
                 ) : (
                   <>
-                    <ChevronUp className="size-3.5" /> Minimizar
+                    <ChevronUp className="size-3.5" /> Minimize
                   </>
                 )}
               </button>
@@ -2030,7 +2030,7 @@ export default function RestClient() {
                     <span />
                   </div>
                   {headers.length === 0 && (
-                    <p className="text-xs text-muted-foreground">Nenhum header. Importe um cURL ou adicione manualmente.</p>
+                    <p className="text-xs text-muted-foreground">No headers yet. Import a cURL or add them manually.</p>
                   )}
                   {headers.map((header) => (
                     <div key={header.id} className="grid grid-cols-[24px_1fr_1.4fr_32px] items-center gap-2">
@@ -2105,7 +2105,7 @@ export default function RestClient() {
                     <div>
                       <p className="text-xs font-semibold">Collection variables</p>
                       <p className="mt-1 text-[11px] text-muted-foreground">
-                        Use {"{{nome}}"} em URL, headers e body. Ex: {"{{baseUrl}}/orders"}
+                        Use {"{{name}}"} in URL, headers, and body. E.g. {"{{baseUrl}}/orders"}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -2142,10 +2142,10 @@ export default function RestClient() {
                     </div>
                   </div>
                   {!activeCollectionId && (
-                    <p className="text-xs text-muted-foreground">Selecione uma collection para editar variáveis.</p>
+                    <p className="text-xs text-muted-foreground">Select a collection to edit variables.</p>
                   )}
                   {activeCollectionId && (activeCollection?.variables.length || 0) === 0 && (
-                    <p className="text-xs text-muted-foreground">Nenhuma variável ainda.</p>
+                    <p className="text-xs text-muted-foreground">No variables yet.</p>
                   )}
                   {(activeCollection?.variables || []).map((variable) => (
                     <div
@@ -2229,8 +2229,8 @@ export default function RestClient() {
             <div
               role="separator"
               aria-orientation="horizontal"
-              aria-label="Redimensionar painel da request"
-              title="Arraste para cima até as abas · clique duplo para minimizar/expandir"
+              aria-label="Resize request panel"
+              title="Drag up to the tabs · double-click to collapse/expand"
               onMouseDown={startRequestPaneResize}
               onDoubleClick={toggleRequestPaneCollapsed}
               className="group flex h-3 shrink-0 cursor-row-resize items-center justify-center border-b border-border hover:bg-muted/40"
@@ -2361,8 +2361,8 @@ export default function RestClient() {
                       className={`grid size-7 place-items-center border border-border hover:bg-muted disabled:pointer-events-none disabled:opacity-40 ${
                         responseSearchOpen ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"
                       }`}
-                      aria-label="Buscar no response"
-                      title="Buscar no response"
+                      aria-label="Find in response"
+                      title="Find in response"
                       aria-pressed={responseSearchOpen}
                     >
                       <Search className="size-3.5" />
@@ -2415,7 +2415,7 @@ export default function RestClient() {
                           goToResponseSearchMatch(event.shiftKey ? -1 : 1)
                         }
                       }}
-                      placeholder="Buscar no conteúdo..."
+                      placeholder="Find in response..."
                       className="h-7 min-w-0 flex-1 border border-input bg-background px-2 font-mono text-xs outline-none focus:border-primary"
                     />
                     <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
@@ -2423,15 +2423,15 @@ export default function RestClient() {
                         ? responseSearchMatches.length === 0
                           ? "0 / 0"
                           : `${responseSearchIndex + 1} / ${responseSearchMatches.length}`
-                        : "—"}
+                        : "0 / 0"}
                     </span>
                     <button
                       type="button"
                       onClick={() => goToResponseSearchMatch(-1)}
                       disabled={responseSearchMatches.length === 0}
                       className="grid size-7 place-items-center border border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-                      aria-label="Ocorrência anterior"
-                      title="Anterior"
+                      aria-label="Previous match"
+                      title="Previous"
                     >
                       <ChevronUp className="size-3.5" />
                     </button>
@@ -2440,8 +2440,8 @@ export default function RestClient() {
                       onClick={() => goToResponseSearchMatch(1)}
                       disabled={responseSearchMatches.length === 0}
                       className="grid size-7 place-items-center border border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-                      aria-label="Próxima ocorrência"
-                      title="Próxima"
+                      aria-label="Next match"
+                      title="Next"
                     >
                       <ChevronDown className="size-3.5" />
                     </button>
@@ -2453,7 +2453,7 @@ export default function RestClient() {
                         setResponseSearchIndex(0)
                       }}
                       className="grid size-7 place-items-center border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-                      aria-label="Fechar busca"
+                      aria-label="Close search"
                     >
                       <X className="size-3.5" />
                     </button>
@@ -2578,15 +2578,15 @@ export default function RestClient() {
               <div>
                 <h2 className="text-lg font-semibold tracking-tight">Delete request?</h2>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Tem certeza que deseja excluir{" "}
+                  Are you sure you want to delete{" "}
                   <span className="font-medium text-foreground">{activeRequest.name}</span>
                   {activeCollection ? (
                     <>
                       {" "}
-                      da collection <span className="font-medium text-foreground">{activeCollection.name}</span>
+                      from collection <span className="font-medium text-foreground">{activeCollection.name}</span>
                     </>
                   ) : null}
-                  ? Esta ação não pode ser desfeita.
+                  ? This action cannot be undone.
                 </p>
               </div>
             </div>
@@ -2643,8 +2643,8 @@ export default function RestClient() {
                 </h2>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
                   {newRequestMode === "blank"
-                    ? "Crie uma request em branco e preencha method, URL e headers no editor."
-                    : "Cole um comando curl para importar method, URL, headers e body."}
+                    ? "Create a blank request and fill in method, URL, and headers in the editor."
+                    : "Paste a curl command to import method, URL, headers, and body."}
                 </p>
               </div>
               <button
@@ -2694,15 +2694,15 @@ export default function RestClient() {
                   <div className="flex items-start gap-2">
                     <Folder className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                     <div>
-                      <p className="text-xs font-medium text-foreground">Crie a primeira pasta</p>
+                      <p className="text-xs font-medium text-foreground">Create your first folder</p>
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        Ainda não há collections. Informe um nome para salvar a pasta e, em seguida, a
-                        request dentro dela.
+                        There are no collections yet. Enter a name to save the folder, then the
+                        request inside it.
                       </p>
                     </div>
                   </div>
                   <label className="flex flex-col gap-1.5 text-[11px] font-medium text-muted-foreground">
-                    Nome da collection
+                    Collection name
                     <input
                       value={newCollectionName}
                       onChange={(event) => {
@@ -2710,7 +2710,7 @@ export default function RestClient() {
                         if (curlError) setCurlError("")
                       }}
                       className="h-10 border border-input bg-background px-3 font-mono text-xs text-foreground outline-none focus:border-primary"
-                      placeholder="Ex: Omniplat Staging"
+                      placeholder="e.g. Omniplat Staging"
                     />
                   </label>
                 </div>
@@ -2729,7 +2729,7 @@ export default function RestClient() {
                   <div className="max-h-48 space-y-2 overflow-y-auto overscroll-contain pr-0.5">
                     {filteredModalCollections.length === 0 ? (
                       <p className="border border-dashed border-border px-3 py-4 text-center text-[11px] text-muted-foreground">
-                        Nenhuma collection encontrada.
+                        No collections found.
                       </p>
                     ) : (
                       filteredModalCollections.map((collection) => {
@@ -2778,7 +2778,7 @@ export default function RestClient() {
                   </button>
                   {targetCollectionId === NEW_COLLECTION_ID && (
                     <label className="flex flex-col gap-1.5 border border-border bg-muted/20 p-3 text-[11px] font-medium text-muted-foreground">
-                      Nome da collection
+                      Collection name
                       <input
                         value={newCollectionName}
                         onChange={(event) => {
@@ -2786,7 +2786,7 @@ export default function RestClient() {
                           if (curlError) setCurlError("")
                         }}
                         className="h-10 border border-input bg-background px-3 font-mono text-xs text-foreground outline-none focus:border-primary"
-                        placeholder="Ex: Omniplat Staging"
+                        placeholder="e.g. Omniplat Staging"
                         autoFocus
                       />
                     </label>

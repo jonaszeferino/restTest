@@ -1,5 +1,5 @@
 -- Variables + separators for simplified collection runner
--- Rode no SQL Editor do Supabase se o projeto já existir
+-- Run in the Supabase SQL Editor if the project already exists
 
 alter table public.collections
   add column if not exists variables jsonb not null default '[]'::jsonb;

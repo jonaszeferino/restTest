@@ -42,7 +42,7 @@ export function detectPlaceholders(template: string): string[] {
 
 /**
  * Substitui {{var}} e {var} (somente chaves conhecidas).
- * Usar na URL, headers e body — mesma regra em todos.
+ * Use in URL, headers, and body — same rules everywhere.
  */
 export function interpolate(template: string, variables: VariablePair[]): string {
   if (!template) return ""
@@ -54,7 +54,7 @@ export function interpolate(template: string, variables: VariablePair[]): string
     Object.prototype.hasOwnProperty.call(map, key) ? map[key] : full,
   )
 
-  // {var} apenas para variáveis conhecidas (não quebra JSON genérico)
+  // {var} only for known variables (does not break generic JSON)
   const sortedKeys = [...keys].sort((a, b) => b.length - a.length)
   for (const key of sortedKeys) {
     const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -65,7 +65,7 @@ export function interpolate(template: string, variables: VariablePair[]): string
   return result
 }
 
-/** @deprecated use interpolate — mantido para compat */
+/** @deprecated use interpolate — kept for compatibility */
 export function interpolateStrict(template: string, variables: VariablePair[]): string {
   return interpolate(template, variables)
 }

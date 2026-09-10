@@ -1,5 +1,5 @@
 -- RESTest schema
--- Rode no SQL Editor do Supabase (Dashboard → SQL → New query)
+-- Run in the Supabase SQL Editor (Dashboard → SQL → New query)
 
 create extension if not exists "pgcrypto";
 
@@ -63,8 +63,8 @@ alter table public.workspaces enable row level security;
 alter table public.collections enable row level security;
 alter table public.requests enable row level security;
 
--- MVP: acesso liberado via publishable key.
--- Troque por policies por usuário quando o Auth estiver pronto.
+-- MVP: open access via publishable key.
+-- Replace with per-user policies when Auth is ready.
 drop policy if exists "workspaces_all" on public.workspaces;
 create policy "workspaces_all" on public.workspaces for all using (true) with check (true);
 

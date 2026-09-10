@@ -46,7 +46,7 @@ type CollectionRunnerProps = {
   open: boolean
   collectionName: string
   items: RunnerItem[]
-  /** Variáveis fixas da collection (ex: baseUrl) */
+  /** Fixed collection variables (e.g. baseUrl) */
   variables: VariablePair[]
   onClose: () => void
 }
@@ -76,7 +76,7 @@ function detectPlaceholders(...texts: string[]) {
   return Array.from(found)
 }
 
-/** Aceita "a;b;c" ou uma por linha */
+/** Accepts "a;b;c" or one value per line */
 function parseInputValues(raw: string) {
   return raw
     .split(/[;\n]+/)
@@ -232,7 +232,7 @@ export function CollectionRunner({
       return
     }
 
-    // "key": "valor" | "key": valor | "key": a, b, c
+    // "key": "value" | "key": value | "key": a, b, c
     const keyRe = new RegExp(`("${key}"\\s*:\\s*)(?:"([^"]*)"|([^,}\\n]+))`, "i")
     if (keyRe.test(current)) {
       setBody(current.replace(keyRe, `$1"${token}"`))
@@ -271,7 +271,7 @@ export function CollectionRunner({
     const inBody = templateHasIterateKey(latestBody, key)
 
     if (!inUrl && !inBody) {
-      // tenta auto-corrigir o body: troca skuId literal (mesmo lista) por {{skuId}}
+      // try to auto-fix body: replace literal skuId (even a list) with {{skuId}}
       insertVariableInBody()
       latestBody = (bodyTemplateRef.current || "").trim()
     }
@@ -290,15 +290,15 @@ export function CollectionRunner({
           body: "",
           resolvedUrl: latestUrl,
           resolvedRequestBody: latestBody,
-          error: `Falta {{${key}}} na URL ou no body. Na Entrada vão os valores (um por vez). No body use apenas "skuId": "{{${key}}}".`,
-          apiMessage: `Falta {{${key}}} na URL ou no body.`,
+          error: `Missing {{${key}}} in the URL or body. Put values in Input (one at a time). In the body use only "skuId": "{{${key}}}".`,
+          apiMessage: `Missing {{${key}}} in the URL or body.`,
         },
       ])
       setSelectedIndex(0)
       return
     }
 
-    // sincroniza state caso ref esteja à frente
+    // sync state if ref is ahead
     setUrl(latestUrl)
     setBody(latestBody)
 
@@ -342,8 +342,8 @@ export function CollectionRunner({
           body: "",
           resolvedUrl,
           resolvedRequestBody: "",
-          error: "Body vazio no Executer. Cole o JSON no campo Body antes de executar.",
-          apiMessage: "Body vazio no Executer. Cole o JSON no campo Body antes de executar.",
+          error: "Empty body in Executer. Paste JSON in the Body field before running.",
+          apiMessage: "Empty body in Executer. Paste JSON in the Body field before running.",
         }
         nextOutputs.push(output)
         setOutputs([...nextOutputs])
@@ -478,9 +478,9 @@ export function CollectionRunner({
             </p>
             <h2 className="truncate text-lg font-semibold tracking-tight">{collectionName}</h2>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              Na <span className="font-medium text-foreground">Entrada</span> cola a lista (
-              <span className="font-mono">A; B; C</span>). Na URL/body usa só{" "}
-              <span className="font-mono">{"{{skuId}}"}</span> — um valor por execução.
+              Paste the list in <span className="font-medium text-foreground">Input</span> (
+              <span className="font-mono">A; B; C</span>). In URL/body use only{" "}
+              <span className="font-mono">{"{{skuId}}"}</span> — one value per run.
             </p>
           </div>
           <button
@@ -488,7 +488,7 @@ export function CollectionRunner({
             onClick={onClose}
             disabled={running}
             className="grid size-8 shrink-0 place-items-center text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-            aria-label="Fechar"
+            aria-label="Close"
           >
             <X className="size-4" />
           </button>
@@ -496,7 +496,7 @@ export function CollectionRunner({
 
         <div className="min-h-0 flex-1 space-y-4 overflow-auto p-5">
           {requests.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Essa collection não tem requests.</p>
+            <p className="text-xs text-muted-foreground">This collection has no requests.</p>
           ) : (
             <>
               <section className="space-y-3 border border-border p-4">
@@ -521,7 +521,7 @@ export function CollectionRunner({
                       onClick={insertVariableInUrl}
                       className="text-[11px] font-medium text-primary hover:underline"
                     >
-                      Inserir {"{{"}
+                      Insert {"{{"}
                       {iterateKey || "orderId"}
                       {"}}"}
                     </button>
@@ -543,9 +543,9 @@ export function CollectionRunner({
                         onClick={insertVariableInBody}
                         className="text-[11px] font-medium text-primary hover:underline"
                       >
-                        Inserir {"{{"}
+                        Insert {"{{"}
                         {iterateKey || "skuId"}
-                        {"}}"} no body
+                        {"}}"} in body
                       </button>
                     </div>
                     <BodyEditor
@@ -556,7 +556,7 @@ export function CollectionRunner({
                     />
                     {inputValues[0] && previewBody && (
                       <p className="line-clamp-3 break-all font-mono text-[10px] text-muted-foreground">
-                        Body (1º): {previewBody}
+                        Body (1st): {previewBody}
                       </p>
                     )}
                   </div>
@@ -564,12 +564,12 @@ export function CollectionRunner({
 
                 {missingIteratePlaceholder && (
                   <p className="border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] leading-5 text-amber-700 dark:text-amber-400">
-                    O body/URL ainda não tem <span className="font-mono">{"{{" + iterateKeySafe + "}}"}</span>.
-                    Não coloque a lista de SKUs no JSON. Use o botão{" "}
+                    Body/URL still missing <span className="font-mono">{"{{" + iterateKeySafe + "}}"}</span>.
+                    Do not put the SKU list in the JSON. Use{" "}
                     <button type="button" onClick={insertVariableInBody} className="underline">
-                      Inserir no body
+                      Insert in body
                     </button>{" "}
-                    e deixe a lista só na Entrada.
+                    and keep the list only in Input.
                   </p>
                 )}
 
@@ -584,7 +584,7 @@ export function CollectionRunner({
                   </p>
                 ) : (
                   <p className="text-[11px] text-amber-600">
-                    Ainda sem {"{{variavel}}"}. Edite a URL acima ou use o botão Inserir.
+                    Still no {"{{variable}}"}. Edit the URL above or use Insert.
                   </p>
                 )}
               </section>
@@ -592,14 +592,14 @@ export function CollectionRunner({
               <section className="space-y-3 border border-border p-4">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold">2. Entrada (lista de valores)</p>
+                    <p className="text-xs font-semibold">2. Input (value list)</p>
                     <p className="mt-1 text-[11px] text-muted-foreground">
-                      Um SKU por vez. Ex: <span className="font-mono">72442-711-GG; 72442-711-M; 72442-711-G</span>
+                      One value at a time. E.g. <span className="font-mono">72442-711-GG; 72442-711-M; 72442-711-G</span>
                     </p>
                   </div>
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="flex flex-col gap-1 text-[11px] font-medium text-muted-foreground">
-                      Variável
+                      Variable
                       <input
                         value={iterateKey}
                         onChange={(event) => setIterateKey(event.target.value.trim() || "orderId")}
@@ -622,7 +622,7 @@ export function CollectionRunner({
                         value={delayMs}
                         onChange={(event) => setDelayMs(Math.max(0, Number(event.target.value) || 0))}
                         className="h-9 w-28 border border-input bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-primary"
-                        title="Espera entre cada requisição"
+                        title="Delay between each request"
                       />
                     </label>
                   </div>
@@ -631,18 +631,18 @@ export function CollectionRunner({
                   value={inputText}
                   onChange={(event) => setInputText(event.target.value)}
                   className="min-h-28 w-full resize-y border border-input bg-background p-3 font-mono text-xs leading-6 outline-none focus:border-primary"
-                  placeholder={"ABC123; DEF456; GHI789\nou\nABC123\nDEF456\nGHI789"}
+                  placeholder={"ABC123; DEF456; GHI789\nor\nABC123\nDEF456\nGHI789"}
                   spellCheck={false}
                 />
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-[11px] text-muted-foreground">
-                    {inputValues.length} valor(es)
-                    {delayMs > 0 ? ` · timer ${delayMs} ms` : " · sem timer"}
-                    {waitingNext ? " · aguardando..." : ""}
+                    {inputValues.length} value{inputValues.length === 1 ? "" : "s"}
+                    {delayMs > 0 ? ` · timer ${delayMs} ms` : " · no timer"}
+                    {waitingNext ? " · waiting..." : ""}
                     {previewUrl ? (
                       <>
                         {" "}
-                        · 1º exemplo: <span className="font-mono text-foreground">{previewUrl}</span>
+                        · 1st example: <span className="font-mono text-foreground">{previewUrl}</span>
                       </>
                     ) : null}
                   </p>
@@ -654,7 +654,7 @@ export function CollectionRunner({
                       }}
                       className="flex h-9 items-center gap-1.5 border border-border px-3 text-xs font-medium hover:bg-muted"
                     >
-                      <Square className="size-3.5" /> Parar
+                      <Square className="size-3.5" /> Stop
                     </button>
                   ) : (
                     <button
@@ -665,7 +665,7 @@ export function CollectionRunner({
                       }
                       className="flex h-9 items-center gap-1.5 bg-primary px-3 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <Play className="size-3.5" /> Executar {inputValues.length || ""}×
+                      <Play className="size-3.5" /> Run {inputValues.length || ""}×
                     </button>
                   )}
                 </div>
@@ -673,19 +673,19 @@ export function CollectionRunner({
 
               <section className="border border-border">
                 <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
-                  <p className="text-xs font-semibold">3. Saída</p>
+                  <p className="text-xs font-semibold">3. Output</p>
                   {outputs.length > 0 && (
                     <p className="text-[11px] text-muted-foreground">
                       <span className="text-emerald-600">{passed} ok</span>
                       {" · "}
-                      <span className="text-rose-600">{failed} erro</span>
+                      <span className="text-rose-600">{failed} failed</span>
                     </p>
                   )}
                 </div>
 
                 {outputs.length === 0 ? (
                   <p className="px-4 py-5 text-xs text-muted-foreground">
-                    Os resultados de cada entrada aparecem aqui.
+                    Results for each input appear here.
                   </p>
                 ) : (
                   <div className="max-h-48 overflow-auto">
@@ -732,13 +732,13 @@ export function CollectionRunner({
                     {running && waitingNext && (
                       <div className="flex items-center gap-2 px-4 py-2.5 text-xs text-muted-foreground">
                         <Loader2 className="size-3.5 animate-spin text-sky-500" />
-                        Aguardando {delayMs} ms antes da próxima...
+                        Waiting {delayMs} ms before next...
                       </div>
                     )}
                     {running && currentIndex != null && currentIndex >= outputs.length && !waitingNext && (
                       <div className="flex items-center gap-2 px-4 py-2.5 text-xs text-muted-foreground">
                         <Loader2 className="size-3.5 animate-spin text-sky-500" />
-                        Rodando {inputValues[currentIndex]}...
+                        Running {inputValues[currentIndex]}...
                       </div>
                     )}
                   </div>
@@ -764,10 +764,10 @@ export function CollectionRunner({
                     {selectedOutput.resolvedRequestBody != null && (
                       <div className="space-y-1">
                         <p className="text-[11px] font-medium text-muted-foreground">
-                          Body enviado ({selectedOutput.resolvedRequestBody.length} chars)
+                          Request body ({selectedOutput.resolvedRequestBody.length} chars)
                         </p>
                         <pre className="max-h-28 overflow-auto border border-border bg-muted/20 p-2 font-mono text-[10px] leading-4">
-                          {selectedOutput.resolvedRequestBody || "(vazio)"}
+                          {selectedOutput.resolvedRequestBody || "(empty)"}
                         </pre>
                       </div>
                     )}
