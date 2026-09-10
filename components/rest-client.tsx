@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   Code2,
   Copy,
   Eye,
@@ -12,6 +13,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  GripHorizontal,
   Minus,
   Moon,
   MoreHorizontal,
@@ -33,7 +35,11 @@ import {
 
 import { BodyEditor } from "@/components/body-editor"
 import { CollectionRunner } from "@/components/collection-runner"
-import { JsonHighlight } from "@/components/json-highlight"
+import {
+  findSearchMatches,
+  getResponseDisplayText,
+  JsonHighlight,
+} from "@/components/json-highlight"
 import { interpolate, interpolateHeaders, type VariablePair } from "@/lib/variables"
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
@@ -269,6 +275,9 @@ export default function RestClient() {
   const [authPassword, setAuthPassword] = useState("")
   const [showAuthPassword, setShowAuthPassword] = useState(false)
   const [activeTab, setActiveTab] = useState("Params")
+  const [requestPaneCollapsed, setRequestPaneCollapsed] = useState(false)
+  const [requestPaneHeight, setRequestPaneHeight] = useState(220)
+  const requestPaneDragRef = useRef<{ startY: number; startHeight: number } | null>(null)
   const [response, setResponse] = useState("{")
   const [responseStatus, setResponseStatus] = useState<number | null>(null)
   const [responseStatusText, setResponseStatusText] = useState("")
@@ -280,6 +289,10 @@ export default function RestClient() {
   const [responseSettingsOpen, setResponseSettingsOpen] = useState(false)
   const [responseView, setResponseView] = useState<"pretty" | "raw">("pretty")
   const [showResponseLineNumbers, setShowResponseLineNumbers] = useState(true)
+  const [responseSearchOpen, setResponseSearchOpen] = useState(false)
+  const [responseSearchQuery, setResponseSearchQuery] = useState("")
+  const [responseSearchIndex, setResponseSearchIndex] = useState(0)
+  const responseSearchInputRef = useRef<HTMLInputElement>(null)
   const [darkMode, setDarkMode] = useState(false)
   const [snippetOpen, setSnippetOpen] = useState(true)
   const [expanded, setExpanded] = useState<string[]>([])
@@ -628,6 +641,38 @@ export default function RestClient() {
     }
   }, [responseSettingsOpen])
 
+  const responseSearchMatches = useMemo(() => {
+    if (!sent || !responseSearchQuery.trim()) return []
+    const text = getResponseDisplayText(response || "", responseView === "pretty")
+    return findSearchMatches(text, responseSearchQuery)
+  }, [sent, response, responseSearchQuery, responseView])
+
+  useEffect(() => {
+    if (responseSearchMatches.length === 0) {
+      setResponseSearchIndex(0)
+      return
+    }
+    setResponseSearchIndex((current) =>
+      current >= responseSearchMatches.length ? 0 : current,
+    )
+  }, [responseSearchMatches.length])
+
+  useEffect(() => {
+    if (!responseSearchOpen) return
+    const frame = window.requestAnimationFrame(() => {
+      responseSearchInputRef.current?.focus()
+      responseSearchInputRef.current?.select()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [responseSearchOpen])
+
+  function goToResponseSearchMatch(direction: 1 | -1) {
+    if (responseSearchMatches.length === 0) return
+    setResponseSearchIndex(
+      (current) => (current + direction + responseSearchMatches.length) % responseSearchMatches.length,
+    )
+  }
+
   function toggleCollection(id: string) {
     setExpanded((current) =>
       current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
@@ -826,6 +871,30 @@ export default function RestClient() {
       startRename({ type: "request", collectionId, requestId: created.id }, created.name)
     } catch (error) {
       setCollectionsError(error instanceof Error ? error.message : "Failed to create separator")
+    }
+  }
+
+  async function cloneRequest(collectionId: string, requestId: string) {
+    setContextMenu(null)
+    const collection = collections.find((item) => item.id === collectionId)
+    const source = collection?.items.find((item) => item.id === requestId)
+    if (!source || source.itemType === "separator") return
+
+    try {
+      const created = await persistNewRequest({
+        collectionId,
+        name: `${source.name} copia`,
+        method: source.method,
+        url: source.url,
+        headers: source.headers.map((header) =>
+          createHeader(header.key, header.value, header.enabled),
+        ),
+        body: source.body,
+        itemType: "request",
+      })
+      attachRequestToCollections(collectionId, created, null)
+    } catch (error) {
+      setCollectionsError(error instanceof Error ? error.message : "Failed to clone request")
     }
   }
 
@@ -1156,6 +1225,36 @@ export default function RestClient() {
     setResponseStatusText("")
     setResponseTime(null)
     setResponseSettingsOpen(false)
+  }
+
+  function startRequestPaneResize(event: MouseEvent) {
+    event.preventDefault()
+    requestPaneDragRef.current = {
+      startY: event.clientY,
+      startHeight: requestPaneHeight,
+    }
+    setRequestPaneCollapsed(false)
+
+    function onMove(moveEvent: globalThis.MouseEvent) {
+      const drag = requestPaneDragRef.current
+      if (!drag) return
+      const delta = moveEvent.clientY - drag.startY
+      const next = Math.min(520, Math.max(96, drag.startHeight + delta))
+      setRequestPaneHeight(next)
+    }
+
+    function onUp() {
+      requestPaneDragRef.current = null
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup", onUp)
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+    }
+
+    document.body.style.cursor = "row-resize"
+    document.body.style.userSelect = "none"
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup", onUp)
   }
 
   if (!loggedIn) {
@@ -1717,7 +1816,10 @@ export default function RestClient() {
               {tabs.map((tab) => (
                 <button
                   key={tab}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => {
+                    setActiveTab(tab)
+                    setRequestPaneCollapsed(false)
+                  }}
                   className={`relative pb-3 text-xs font-medium ${
                     activeTab === tab
                       ? "text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary"
@@ -1737,8 +1839,29 @@ export default function RestClient() {
                   )}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => setRequestPaneCollapsed((value) => !value)}
+                className="ml-auto mb-3 flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+                title={requestPaneCollapsed ? "Expandir Params / Body" : "Minimizar Params / Body"}
+                aria-label={requestPaneCollapsed ? "Expandir painel da request" : "Minimizar painel da request"}
+              >
+                {requestPaneCollapsed ? (
+                  <>
+                    <ChevronDown className="size-3.5" /> Expandir
+                  </>
+                ) : (
+                  <>
+                    <ChevronUp className="size-3.5" /> Minimizar
+                  </>
+                )}
+              </button>
             </div>
-            <div className="max-h-[220px] shrink-0 overflow-auto border-b border-border py-5">
+            {!requestPaneCollapsed && (
+            <div
+              className="shrink-0 overflow-auto border-b border-border py-5"
+              style={{ height: requestPaneHeight }}
+            >
               {activeTab === "Params" && (
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center justify-between">
@@ -2069,7 +2192,19 @@ export default function RestClient() {
                 </div>
               )}
             </div>
-            <div className="mt-6 flex min-h-0 flex-1 flex-col">
+            )}
+            <div
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Redimensionar painel da request"
+              title="Arraste para redimensionar · clique duplo para minimizar/expandir"
+              onMouseDown={startRequestPaneResize}
+              onDoubleClick={() => setRequestPaneCollapsed((value) => !value)}
+              className="group flex h-3 shrink-0 cursor-row-resize items-center justify-center border-b border-border hover:bg-muted/40"
+            >
+              <GripHorizontal className="size-3.5 text-muted-foreground/50 group-hover:text-muted-foreground" />
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col">
               <div className="mb-3 flex shrink-0 items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-semibold">Response</span>
@@ -2186,6 +2321,19 @@ export default function RestClient() {
                       <Copy className="size-3" />
                       {responseCopied ? "Copied" : "Copy"}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setResponseSearchOpen((open) => !open)}
+                      disabled={!sent}
+                      className={`grid size-7 place-items-center border border-border hover:bg-muted disabled:pointer-events-none disabled:opacity-40 ${
+                        responseSearchOpen ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      aria-label="Buscar no response"
+                      title="Buscar no response"
+                      aria-pressed={responseSearchOpen}
+                    >
+                      <Search className="size-3.5" />
+                    </button>
                   </div>
                   <div className="flex items-center gap-3">
                     <button
@@ -2213,9 +2361,79 @@ export default function RestClient() {
                     </span>
                   </div>
                 </div>
+                {responseSearchOpen && (
+                  <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-muted/30 px-3">
+                    <Search className="size-3.5 shrink-0 text-muted-foreground" />
+                    <input
+                      ref={responseSearchInputRef}
+                      value={responseSearchQuery}
+                      onChange={(event) => {
+                        setResponseSearchQuery(event.target.value)
+                        setResponseSearchIndex(0)
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.preventDefault()
+                          setResponseSearchOpen(false)
+                          return
+                        }
+                        if (event.key === "Enter") {
+                          event.preventDefault()
+                          goToResponseSearchMatch(event.shiftKey ? -1 : 1)
+                        }
+                      }}
+                      placeholder="Buscar no conteúdo..."
+                      className="h-7 min-w-0 flex-1 border border-input bg-background px-2 font-mono text-xs outline-none focus:border-primary"
+                    />
+                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                      {responseSearchQuery.trim()
+                        ? responseSearchMatches.length === 0
+                          ? "0 / 0"
+                          : `${responseSearchIndex + 1} / ${responseSearchMatches.length}`
+                        : "—"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => goToResponseSearchMatch(-1)}
+                      disabled={responseSearchMatches.length === 0}
+                      className="grid size-7 place-items-center border border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                      aria-label="Ocorrência anterior"
+                      title="Anterior"
+                    >
+                      <ChevronUp className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => goToResponseSearchMatch(1)}
+                      disabled={responseSearchMatches.length === 0}
+                      className="grid size-7 place-items-center border border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                      aria-label="Próxima ocorrência"
+                      title="Próxima"
+                    >
+                      <ChevronDown className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResponseSearchOpen(false)
+                        setResponseSearchQuery("")
+                        setResponseSearchIndex(0)
+                      }}
+                      className="grid size-7 place-items-center border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label="Fechar busca"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                )}
                 {responseView === "pretty" ? (
                   sent ? (
-                    <JsonHighlight value={response} showLineNumbers={showResponseLineNumbers} />
+                    <JsonHighlight
+                      value={response}
+                      showLineNumbers={showResponseLineNumbers}
+                      searchQuery={responseSearchOpen ? responseSearchQuery : ""}
+                      activeMatchIndex={responseSearchIndex}
+                    />
                   ) : (
                     <JsonHighlight
                       value={null}
@@ -2223,10 +2441,21 @@ export default function RestClient() {
                       showLineNumbers={showResponseLineNumbers}
                     />
                   )
+                ) : sent ? (
+                  <JsonHighlight
+                    value={response}
+                    pretty={false}
+                    showLineNumbers={showResponseLineNumbers}
+                    searchQuery={responseSearchOpen ? responseSearchQuery : ""}
+                    activeMatchIndex={responseSearchIndex}
+                  />
                 ) : (
-                  <pre className="json-viewer min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-all p-4 font-mono text-[12px] leading-6 text-foreground">
-                    {sent ? response || "" : "// Response body will appear here"}
-                  </pre>
+                  <JsonHighlight
+                    value={null}
+                    pretty={false}
+                    emptyLabel="// Response body will appear here"
+                    showLineNumbers={showResponseLineNumbers}
+                  />
                 )}
               </div>
             </div>
@@ -2729,6 +2958,18 @@ export default function RestClient() {
             <Pencil className="size-3.5 text-muted-foreground" />
             Rename
           </button>
+          {contextMenu.type === "request" &&
+            collections
+              .find((item) => item.id === contextMenu.collectionId)
+              ?.items.find((item) => item.id === contextMenu.requestId)?.itemType !== "separator" && (
+              <button
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-muted"
+                onClick={() => void cloneRequest(contextMenu.collectionId, contextMenu.requestId)}
+              >
+                <Copy className="size-3.5 text-muted-foreground" />
+                Clone
+              </button>
+            )}
           {contextMenu.type === "request" && (
             <button
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-rose-600 hover:bg-muted"
