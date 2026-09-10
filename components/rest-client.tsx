@@ -278,6 +278,7 @@ export default function RestClient() {
   const [requestPaneCollapsed, setRequestPaneCollapsed] = useState(false)
   const [requestPaneHeight, setRequestPaneHeight] = useState(220)
   const requestPaneDragRef = useRef<{ startY: number; startHeight: number } | null>(null)
+  const requestPaneLastHeightRef = useRef(220)
   const [response, setResponse] = useState("{")
   const [responseStatus, setResponseStatus] = useState<number | null>(null)
   const [responseStatusText, setResponseStatusText] = useState("")
@@ -1229,32 +1230,61 @@ export default function RestClient() {
 
   function startRequestPaneResize(event: MouseEvent) {
     event.preventDefault()
+    const startHeight = requestPaneCollapsed ? 0 : requestPaneHeight
     requestPaneDragRef.current = {
       startY: event.clientY,
-      startHeight: requestPaneHeight,
+      startHeight,
     }
-    setRequestPaneCollapsed(false)
+    if (requestPaneCollapsed) {
+      setRequestPaneCollapsed(false)
+      setRequestPaneHeight(0)
+    }
 
     function onMove(moveEvent: globalThis.MouseEvent) {
       const drag = requestPaneDragRef.current
       if (!drag) return
       const delta = moveEvent.clientY - drag.startY
-      const next = Math.min(520, Math.max(96, drag.startHeight + delta))
+      const next = Math.min(520, Math.max(0, drag.startHeight + delta))
+      if (next <= 28) {
+        setRequestPaneHeight(0)
+        return
+      }
+      setRequestPaneCollapsed(false)
       setRequestPaneHeight(next)
+      requestPaneLastHeightRef.current = next
     }
 
     function onUp() {
+      const drag = requestPaneDragRef.current
       requestPaneDragRef.current = null
       window.removeEventListener("mousemove", onMove)
       window.removeEventListener("mouseup", onUp)
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
+
+      if (!drag) return
+      // If the pane was dragged up to the tabs, collapse the whole Params/Auth block.
+      if (requestPaneHeight <= 28) {
+        setRequestPaneCollapsed(true)
+        setRequestPaneHeight(requestPaneLastHeightRef.current || 220)
+      }
     }
 
     document.body.style.cursor = "row-resize"
     document.body.style.userSelect = "none"
     window.addEventListener("mousemove", onMove)
     window.addEventListener("mouseup", onUp)
+  }
+
+  function toggleRequestPaneCollapsed() {
+    setRequestPaneCollapsed((collapsed) => {
+      if (collapsed) {
+        setRequestPaneHeight(requestPaneLastHeightRef.current || 220)
+        return false
+      }
+      requestPaneLastHeightRef.current = requestPaneHeight || 220
+      return true
+    })
   }
 
   if (!loggedIn) {
