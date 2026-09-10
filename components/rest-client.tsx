@@ -1231,6 +1231,7 @@ export default function RestClient() {
   function startRequestPaneResize(event: MouseEvent) {
     event.preventDefault()
     const startHeight = requestPaneCollapsed ? 0 : requestPaneHeight
+    let latestHeight = startHeight
     requestPaneDragRef.current = {
       startY: event.clientY,
       startHeight,
@@ -1245,6 +1246,7 @@ export default function RestClient() {
       if (!drag) return
       const delta = moveEvent.clientY - drag.startY
       const next = Math.min(520, Math.max(0, drag.startHeight + delta))
+      latestHeight = next
       if (next <= 28) {
         setRequestPaneHeight(0)
         return
@@ -1255,16 +1257,14 @@ export default function RestClient() {
     }
 
     function onUp() {
-      const drag = requestPaneDragRef.current
       requestPaneDragRef.current = null
       window.removeEventListener("mousemove", onMove)
       window.removeEventListener("mouseup", onUp)
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
 
-      if (!drag) return
-      // If the pane was dragged up to the tabs, collapse the whole Params/Auth block.
-      if (requestPaneHeight <= 28) {
+      // Arrastou até a barra de Params / Authorization: esconde o bloco inteiro.
+      if (latestHeight <= 28) {
         setRequestPaneCollapsed(true)
         setRequestPaneHeight(requestPaneLastHeightRef.current || 220)
       }
@@ -1848,7 +1848,10 @@ export default function RestClient() {
                   key={tab}
                   onClick={() => {
                     setActiveTab(tab)
-                    setRequestPaneCollapsed(false)
+                    if (requestPaneCollapsed) {
+                      setRequestPaneCollapsed(false)
+                      setRequestPaneHeight(requestPaneLastHeightRef.current || 220)
+                    }
                   }}
                   className={`relative pb-3 text-xs font-medium ${
                     activeTab === tab
@@ -1871,9 +1874,9 @@ export default function RestClient() {
               ))}
               <button
                 type="button"
-                onClick={() => setRequestPaneCollapsed((value) => !value)}
+                onClick={toggleRequestPaneCollapsed}
                 className="ml-auto mb-3 flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
-                title={requestPaneCollapsed ? "Expandir Params / Body" : "Minimizar Params / Body"}
+                title={requestPaneCollapsed ? "Expandir Params / Body" : "Minimizar até as abas"}
                 aria-label={requestPaneCollapsed ? "Expandir painel da request" : "Minimizar painel da request"}
               >
                 {requestPaneCollapsed ? (
@@ -1888,10 +1891,10 @@ export default function RestClient() {
               </button>
             </div>
             {!requestPaneCollapsed && (
-            <div
-              className="shrink-0 overflow-auto border-b border-border py-5"
-              style={{ height: requestPaneHeight }}
-            >
+              <div
+                className="shrink-0 overflow-auto border-b border-border py-5"
+                style={{ height: requestPaneHeight }}
+              >
               {activeTab === "Params" && (
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center justify-between">
@@ -2227,9 +2230,9 @@ export default function RestClient() {
               role="separator"
               aria-orientation="horizontal"
               aria-label="Redimensionar painel da request"
-              title="Arraste para redimensionar · clique duplo para minimizar/expandir"
+              title="Arraste para cima até as abas · clique duplo para minimizar/expandir"
               onMouseDown={startRequestPaneResize}
-              onDoubleClick={() => setRequestPaneCollapsed((value) => !value)}
+              onDoubleClick={toggleRequestPaneCollapsed}
               className="group flex h-3 shrink-0 cursor-row-resize items-center justify-center border-b border-border hover:bg-muted/40"
             >
               <GripHorizontal className="size-3.5 text-muted-foreground/50 group-hover:text-muted-foreground" />
